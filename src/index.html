@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <base href="/run/marketplace/" />
+  <title>Marketplace</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           var(--hub-bg, #f9fafb);
+      --card:         var(--hub-surface, #ffffff);
+      --border:       var(--hub-border, #e5e7eb);
+      --border-mid:   var(--hub-border, #d1d5db);
+      --text:         var(--hub-text, #111827);
+      --muted:        var(--hub-text-muted, #6b7280);
+      --accent:       var(--hub-primary, #111827);
+      --accent-hover: var(--hub-primary-hover, #374151);
+      --accent-light: #f3f4f6;
+      --radius:       var(--hub-radius, 0.5rem);
+      --shadow:       0 1px 3px rgba(0,0,0,.07);
+      --shadow-md:    0 4px 12px rgba(0,0,0,.1);
+      --red:    #dc2626; --red-light:   #fee2e2;
+      --green:  #059669; --green-light: #d1fae5;
+      --amber:  #d97706; --amber-light: #fef3c7;
+    }
+
+    body {
+      font-family: var(--hub-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: var(--hub-font-size, 15px);
+      line-height: 1.5;
+    }
+
+    .app { max-width: 920px; margin: 0 auto; padding: 16px; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; border-radius: 8px; font-size: 0.875rem;
+      font-weight: 600; cursor: pointer; border: none;
+      transition: opacity .15s, background .15s; text-decoration: none;
+      font-family: inherit;
+    }
+    .btn:disabled { opacity: .45; cursor: default; }
+    .btn-primary { background: var(--accent); color: var(--hub-primary-fg, #fff); }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-ghost { background: transparent; color: var(--muted); border: 1.5px solid var(--border-mid); }
+    .btn-ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .btn-danger { background: var(--red); color: white; }
+    .btn-danger:hover:not(:disabled) { opacity: .88; }
+    .btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+    .btn-block { width: 100%; justify-content: center; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+    }
+
+    /* ── Page header ── */
+    .page-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px; gap: 10px; flex-wrap: wrap;
+    }
+    .page-header h1 { font-size: 1.25rem; font-weight: 700; }
+    .page-header .header-actions { display: flex; gap: 8px; align-items: center; }
+
+    /* ── Tabs ── */
+    .tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .tab {
+      padding: 8px 14px; font-size: 0.85rem; font-weight: 600; color: var(--muted);
+      cursor: pointer; border: none; background: none; border-bottom: 2px solid transparent;
+      margin-bottom: -1px; transition: color .15s, border-color .15s; font-family: inherit;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab .count {
+      display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 20px;
+      font-size: 0.7rem; font-weight: 700; background: var(--red); color: #fff; text-align: center;
+    }
+
+    /* ── Filter bar ── */
+    .filter-bar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+    .search-input {
+      flex: 1; min-width: 160px; padding: 8px 12px; border-radius: 8px;
+      border: 1.5px solid var(--border-mid); background: var(--card); color: var(--text);
+      font-size: 0.85rem; font-family: inherit;
+    }
+    .search-input:focus { outline: none; border-color: var(--accent); }
+    .cat-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+    .cat-tab {
+      padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600;
+      cursor: pointer; border: 2px solid transparent; transition: all .15s;
+      background: var(--accent-light); color: var(--muted);
+    }
+    .cat-tab.active { background: var(--accent); color: var(--hub-primary-fg, #fff); }
+    .cat-tab:not(.active):hover { border-color: var(--border-mid); }
+
+    /* ── Listing grid ── */
+    .listing-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px;
+    }
+    .listing-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+      box-shadow: var(--shadow); cursor: pointer; overflow: hidden;
+      transition: box-shadow .15s, border-color .15s; display: flex; flex-direction: column;
+    }
+    .listing-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-mid); }
+    .listing-photo {
+      width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--accent-light);
+      display: flex; align-items: center; justify-content: center; font-size: 2.4rem;
+    }
+    .listing-card-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
+    .listing-price { font-weight: 700; font-size: 1rem; }
+    .listing-price.free { color: var(--green); }
+    .listing-title {
+      font-weight: 600; font-size: 0.9rem; line-height: 1.3;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .listing-meta { font-size: 0.76rem; color: var(--muted); display: flex; align-items: center; gap: 6px; margin-top: auto; }
+
+    .empty-state {
+      text-align: center; padding: 48px 20px; color: var(--muted);
+    }
+    .empty-state .icon { font-size: 2.4rem; margin-bottom: 8px; }
+    .empty-state p { font-size: 0.9rem; margin-bottom: 14px; }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-flex; align-items: center; gap: 3px; padding: 1px 9px; border-radius: 20px;
+      font-size: 0.72rem; font-weight: 700; color: #fff;
+    }
+    .badge-muted   { background: #e5e7eb; color: var(--muted); }
+    .badge-sold    { background: var(--muted); }
+    .badge-flagged { background: var(--amber); }
+    .badge-removed { background: var(--red); }
+
+    /* ── Avatars ── */
+    .avatar {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; border-radius: 50%; color: #fff; font-weight: 700;
+      font-size: 0.7rem; flex-shrink: 0;
+    }
+    .avatar-lg { width: 32px; height: 32px; font-size: 0.85rem; }
+
+    /* ── Listing detail ── */
+    .back-btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 0.82rem; color: var(--accent); cursor: pointer;
+      background: none; border: none; padding: 0; margin-bottom: 12px; font-weight: 600;
+      font-family: inherit;
+    }
+    .back-btn:hover { opacity: .75; }
+
+    .detail-grid { display: grid; grid-template-columns: 1fr; gap: 18px; }
+    @media (min-width: 680px) { .detail-grid { grid-template-columns: 1.1fr 1fr; } }
+
+    .photo-carousel { position: relative; }
+    .photo-main {
+      width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius);
+      background: var(--accent-light); display: flex; align-items: center; justify-content: center;
+      font-size: 3rem; border: 1px solid var(--border);
+    }
+    .photo-thumbs { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .photo-thumb {
+      width: 56px; height: 56px; object-fit: cover; border-radius: 6px; cursor: pointer;
+      border: 2px solid transparent; opacity: .65; transition: all .15s;
+    }
+    .photo-thumb:hover { opacity: 1; }
+    .photo-thumb.active { border-color: var(--accent); opacity: 1; }
+
+    .detail-title { font-size: 1.3rem; font-weight: 700; line-height: 1.3; margin-bottom: 6px; }
+    .detail-price { font-size: 1.5rem; font-weight: 700; margin-bottom: 8px; }
+    .detail-price.free { color: var(--green); }
+    .detail-section { margin-top: 14px; }
+    .detail-section h3 { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 6px; }
+    .detail-body { font-size: 0.92rem; white-space: pre-wrap; line-height: 1.6; }
+    .seller-row { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; }
+    .detail-actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+
+    /* ── Forms ── */
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 5px; color: var(--text); }
+    .field input, .field select, .field textarea {
+      width: 100%; padding: 9px 12px; border-radius: 8px;
+      border: 1.5px solid var(--border-mid); background: var(--card); color: var(--text);
+      font-size: 0.88rem; font-family: inherit;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--accent); }
+    .field textarea { resize: vertical; min-height: 80px; }
+    .field-row { display: flex; gap: 12px; }
+    .field-row .field { flex: 1; }
+    .field-hint { font-size: 0.76rem; color: var(--muted); margin-top: 4px; }
+
+    /* ── Modal ── */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,.45);
+      display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px;
+    }
+    .modal {
+      background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow-md);
+      width: 100%; max-width: 520px; max-height: 88vh; overflow-y: auto; padding: 22px;
+    }
+    .modal h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 16px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+    /* ── Photo upload ── */
+    .upload-area {
+      border: 1.5px dashed var(--border-mid); border-radius: var(--radius);
+      padding: 16px; text-align: center; cursor: pointer; transition: border-color .15s;
+      font-size: 0.84rem; color: var(--muted);
+    }
+    .upload-area:hover { border-color: var(--accent); color: var(--accent); }
+    .upload-grid { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .upload-thumb { position: relative; width: 64px; height: 64px; }
+    .upload-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); }
+    .upload-thumb .remove-photo {
+      position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%;
+      background: var(--red); color: #fff; border: none; font-size: 0.7rem; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; line-height: 1;
+    }
+
+    /* ── Inquiries ── */
+    .thread-list { display: flex; flex-direction: column; gap: 8px; }
+    .thread-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+      box-shadow: var(--shadow); cursor: pointer; padding: 12px 16px;
+      display: flex; align-items: center; gap: 12px; transition: box-shadow .15s, border-color .15s;
+    }
+    .thread-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-mid); }
+    .thread-card-info { flex: 1; min-width: 0; }
+    .thread-card-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 2px; }
+    .thread-card-sub { font-size: 0.78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .thread-card-meta { font-size: 0.74rem; color: var(--muted); white-space: nowrap; }
+
+    .message-list { display: flex; flex-direction: column; gap: 10px; margin: 16px 0; }
+    .message-row { display: flex; gap: 8px; max-width: 80%; }
+    .message-row.mine { align-self: flex-end; flex-direction: row-reverse; margin-left: auto; }
+    .message-bubble {
+      background: var(--accent-light); border-radius: 14px; padding: 8px 13px;
+      font-size: 0.86rem; line-height: 1.45;
+    }
+    .message-row.mine .message-bubble { background: var(--accent); color: var(--hub-primary-fg, #fff); }
+    .message-meta { font-size: 0.7rem; color: var(--muted); margin-top: 3px; }
+    .message-row.mine .message-meta { text-align: right; }
+    .compose-row { display: flex; gap: 8px; align-items: flex-end; }
+    .compose-row textarea { flex: 1; min-height: 44px; max-height: 120px; }
+
+    /* ── Flag queue ── */
+    .flag-card { padding: 14px 16px; }
+    .flag-reason { font-size: 0.86rem; margin: 6px 0 10px; padding: 8px 12px; background: var(--amber-light); border-radius: 8px; }
+    .flag-actions { display: flex; gap: 8px; }
+
+    @media (max-width: 480px) {
+      .app { padding: 12px; }
+      .modal { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+<div id="app" class="app">
+  <div class="page-header">
+    <h1>🛍️ Marketplace</h1>
+  </div>
+  <div id="content"></div>
+</div>
+
+<script type="module">
+import {
+  esc, initial, memberColor, isAdult, hubConfirm, formatRelativeDate,
+  createFilesHelper,
+} from "/hub-sdk.js";
+import {
+  CATEGORIES, categoryLabel, categoryIcon, formatPrice, statusLabel,
+  isOwnListing, canEditListing, canMessageSeller, canModerate,
+  filterListings, sortListings, inquiriesForMember, sortInquiries,
+  openFlags, sortFlags,
+} from "./logic.js";
+
+const CONTEXT    = window.__CONTEXT_URL    ?? "";
+const DB         = window.__DB_URL         ?? "";
+const FILES_URL  = window.__FILES_URL      ?? "";
+const APP_ID     = window.__APP_ID         ?? "marketplace";
+const ME         = window.__CURRENT_MEMBER ?? null;
+
+const files = createFilesHelper(FILES_URL);
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let members   = [];
+let memberMap = new Map();
+
+let view = "browse"; // browse | listing | my-listings | inquiries | inquiry | flagged
+let listings = [];
+let listingPhotos = new Map(); // listingId -> [{ id, file_id, position }]
+let currentListing = null;
+let currentPhotoIdx = 0;
+
+let inquiries = [];           // threads where ME is buyer or seller
+let currentInquiry = null;
+let currentMessages = [];
+
+let flags = [];
+
+let categoryFilter = "all";
+let searchQuery = "";
+
+let modalEl = null;
+
+// ── DB helper ──────────────────────────────────────────────────────────────────
+async function db(sql, params = []) {
+  if (!DB) return { rows: [] };
+  const res = await fetch(DB, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sql, params }),
+  });
+  return res.json();
+}
+
+function uuid() { return crypto.randomUUID(); }
+
+// ── Demo data ──────────────────────────────────────────────────────────────────
+const DEMO_MEMBERS = [
+  { id: "demo-1", name: "Alex",  role: "adult" },
+  { id: "demo-2", name: "Bea",   role: "adult" },
+  { id: "demo-3", name: "Cam",   role: "child" },
+];
+
+function demoListings() {
+  const now = new Date().toISOString();
+  return [
+    { id: "demo-l1", title: "Kids bike, 16in wheels", description: "Lightly used, great for ages 4-7. Includes training wheels.", price_cents: 4000, category: "kids", status: "active", seller_id: "demo-2", seller_name: "Bea", created_at: now, updated_at: now },
+    { id: "demo-l2", title: "Patio table + 4 chairs", description: "Solid wood, weathered but sturdy. Pickup only — too heavy to ship.", price_cents: 12000, category: "outdoor", status: "active", seller_id: "demo-1", seller_name: "Alex", created_at: now, updated_at: now },
+    { id: "demo-l3", title: "Box of board games", description: "Settlers of Catan, Ticket to Ride, and a few others. All pieces present.", price_cents: 0, category: "free", status: "active", seller_id: "demo-1", seller_name: "Alex", created_at: now, updated_at: now },
+  ];
+}
+
+// ── Loading ────────────────────────────────────────────────────────────────────
+async function loadMembers() {
+  if (!CONTEXT) {
+    members = DEMO_MEMBERS;
+    memberMap = new Map(members.map(m => [m.id, m]));
+    return;
+  }
+  try {
+    const res = await fetch(`${CONTEXT}?keys=family.members`);
+    members = ((await res.json())["family.members"]) ?? [];
+  } catch { members = []; }
+  memberMap = new Map(members.map(m => [m.id, m]));
+}
+
+function memberName(id) { return memberMap.get(id)?.name ?? "Unknown"; }
+
+async function loadListings() {
+  if (!DB) { listings = demoListings(); return; }
+  const { rows } = await db(
+    `SELECT id, title, description, price_cents, category, pickup_details, status,
+            seller_id, seller_name, created_at, updated_at
+     FROM listings ORDER BY created_at DESC`
+  );
+  listings = rows ?? [];
+}
+
+async function loadPhotosFor(listingId) {
+  if (!DB) return [];
+  const { rows } = await db(
+    `SELECT id, file_id, position FROM listing_photos WHERE listing_id = ? ORDER BY position ASC`,
+    [listingId]
+  );
+  const photos = rows ?? [];
+  listingPhotos.set(listingId, photos);
+  return photos;
+}
+
+async function loadInquiries() {
+  if (!DB || !ME) { inquiries = []; return; }
+  const { rows } = await db(
+    `SELECT id, listing_id, buyer_id, buyer_name, seller_id, created_at
+     FROM inquiries WHERE buyer_id = ? OR seller_id = ? ORDER BY created_at DESC`,
+    [ME.id, ME.id]
+  );
+  inquiries = rows ?? [];
+}
+
+async function loadMessagesFor(inquiryId) {
+  if (!DB) return [];
+  const { rows } = await db(
+    `SELECT id, sender_id, sender_name, body, created_at
+     FROM inquiry_messages WHERE inquiry_id = ? ORDER BY created_at ASC`,
+    [inquiryId]
+  );
+  return rows ?? [];
+}
+
+async function loadFlags() {
+  if (!DB || !ME || !canModerate(ME)) { flags = []; return; }
+  const { rows } = await db(
+    `SELECT id, listing_id, reporter_id, reporter_name, reason, status, created_at, resolved_by, resolved_at
+     FROM flags WHERE status = 'open' ORDER BY created_at ASC`
+  );
+  flags = rows ?? [];
+}
+
+// ── Activity & notifications ───────────────────────────────────────────────────
+async function logActivity(recordId, action, detail = "") {
+  if (!DB) return;
+  await db(
+    `INSERT INTO activity (id, record_id, actor_id, action, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    [uuid(), recordId, ME?.id ?? "system", action, detail, new Date().toISOString()]
+  ).catch(() => {});
+}
+
+async function notify(title, body) {
+  await fetch("/api/notifications/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title, body, url: `/run/${APP_ID}` }),
+  }).catch(() => {});
+}
+
+async function postActivity(type, description, deepLinkParams) {
+  await fetch("/api/activity", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      type, actor: ME?.name ?? "Someone", description,
+      metadata: deepLinkParams ? { deepLink: { appId: APP_ID, params: deepLinkParams } } : undefined,
+    }),
+  }).catch(() => {});
+}
+
+// ── Listings: create / edit / status ───────────────────────────────────────────
+async function createListing(fields, photoFiles) {
+  const id = uuid();
+  const now = new Date().toISOString();
+
+  await db(
+    `INSERT INTO listings (id, title, description, price_cents, category, pickup_details, status, seller_id, seller_name, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`,
+    [id, fields.title, fields.description, fields.price_cents, fields.category, fields.pickup_details, ME.id, ME.name, now, now]
+  );
+
+  const newListing = {
+    id, title: fields.title, description: fields.description, price_cents: fields.price_cents,
+    category: fields.category, pickup_details: fields.pickup_details, status: "active",
+    seller_id: ME.id, seller_name: ME.name, created_at: now, updated_at: now,
+  };
+  listings = [newListing, ...listings];
+
+  // Upload photos after the row exists so we always have a listing to attach them to.
+  const photos = [];
+  for (let i = 0; i < photoFiles.length; i++) {
+    try {
+      const { id: fileId } = await files.upload(photoFiles[i]);
+      const photoId = uuid();
+      await db(
+        `INSERT INTO listing_photos (id, listing_id, file_id, position, created_at) VALUES (?, ?, ?, ?, ?)`,
+        [photoId, id, fileId, i, now]
+      );
+      photos.push({ id: photoId, file_id: fileId, position: i });
+    } catch { /* skip failed uploads — listing still created */ }
+  }
+  listingPhotos.set(id, photos);
+
+  closeModal();
+  view = "listing";
+  currentListing = newListing;
+  currentPhotoIdx = 0;
+  render();
+
+  Promise.all([
+    logActivity(id, "created", `${ME.name} listed "${fields.title}"`),
+    notify(`New listing: ${fields.title}`, `${ME.name} posted a new item for ${formatPrice(fields.price_cents)}.`),
+    postActivity("marketplace.listing.created", `${ME.name} listed "${fields.title}" on the marketplace`, { listingId: id }),
+  ]).catch(() => {});
+}
+
+async function updateListing(listing, fields) {
+  const now = new Date().toISOString();
+  await db(
+    `UPDATE listings SET title = ?, description = ?, price_cents = ?, category = ?, pickup_details = ?, updated_at = ?
+     WHERE id = ?`,
+    [fields.title, fields.description, fields.price_cents, fields.category, fields.pickup_details, now, listing.id]
+  );
+
+  const updated = { ...listing, ...fields, updated_at: now };
+  const idx = listings.findIndex(l => l.id === listing.id);
+  if (idx !== -1) listings[idx] = updated;
+  if (currentListing?.id === listing.id) currentListing = updated;
+
+  closeModal();
+  render();
+  logActivity(listing.id, "edited", `${ME.name} edited "${fields.title}"`);
+}
+
+async function setListingStatus(listing, status) {
+  const now = new Date().toISOString();
+  await db(`UPDATE listings SET status = ?, updated_at = ? WHERE id = ?`, [status, now, listing.id]);
+
+  const updated = { ...listing, status, updated_at: now };
+  const idx = listings.findIndex(l => l.id === listing.id);
+  if (idx !== -1) listings[idx] = updated;
+  if (currentListing?.id === listing.id) currentListing = updated;
+
+  render();
+  logActivity(listing.id, "status_changed", `${ME.name} marked "${listing.title}" as ${statusLabel(status).toLowerCase()}`);
+}
+
+// ── Inquiries ──────────────────────────────────────────────────────────────────
+async function startOrOpenInquiry(listing) {
+  // One thread per (listing, buyer) — reuse if it already exists.
+  let inquiry = inquiries.find(i => i.listing_id === listing.id && i.buyer_id === ME.id);
+  if (!inquiry) {
+    const id = uuid();
+    const now = new Date().toISOString();
+    await db(
+      `INSERT INTO inquiries (id, listing_id, buyer_id, buyer_name, seller_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT (household_id, listing_id, buyer_id) DO NOTHING`,
+      [id, listing.id, ME.id, ME.name, listing.seller_id, now]
+    ).catch(() => {});
+    inquiry = { id, listing_id: listing.id, buyer_id: ME.id, buyer_name: ME.name, seller_id: listing.seller_id, created_at: now };
+    inquiries = [inquiry, ...inquiries];
+  }
+  await openInquiry(inquiry);
+}
+
+async function openInquiry(inquiry) {
+  currentInquiry = inquiry;
+  currentMessages = await loadMessagesFor(inquiry.id);
+  view = "inquiry";
+  render();
+}
+
+async function sendInquiryMessage(inquiry, body) {
+  const id = uuid();
+  const now = new Date().toISOString();
+  await db(
+    `INSERT INTO inquiry_messages (id, inquiry_id, sender_id, sender_name, body, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    [id, inquiry.id, ME.id, ME.name, body, now]
+  );
+
+  currentMessages = [...currentMessages, { id, sender_id: ME.id, sender_name: ME.name, body, created_at: now }];
+  render();
+  scrollMessagesToBottom();
+
+  const listing = listings.find(l => l.id === inquiry.listing_id);
+  Promise.all([
+    logActivity(inquiry.id, "message", `${ME.name} sent a message about "${listing?.title ?? "a listing"}"`),
+    notify(`New question about "${listing?.title ?? "your listing"}"`, `${ME.name}: ${body.slice(0, 120)}`),
+  ]).catch(() => {});
+}
+
+function scrollMessagesToBottom() {
+  requestAnimationFrame(() => {
+    const el = document.querySelector(".message-list");
+    if (el) el.scrollTop = el.scrollHeight;
+  });
+}
+
+// ── Flags / moderation ─────────────────────────────────────────────────────────
+async function fileFlag(listing, reason) {
+  const id = uuid();
+  const now = new Date().toISOString();
+  await db(
+    `INSERT INTO flags (id, listing_id, reporter_id, reporter_name, reason, status, created_at) VALUES (?, ?, ?, ?, ?, 'open', ?)`,
+    [id, listing.id, ME.id, ME.name, reason, now]
+  );
+  await db(`UPDATE listings SET status = 'flagged', updated_at = ? WHERE id = ? AND status = 'active'`, [now, listing.id]).catch(() => {});
+
+  const idx = listings.findIndex(l => l.id === listing.id);
+  if (idx !== -1 && listings[idx].status === "active") listings[idx] = { ...listings[idx], status: "flagged" };
+  if (currentListing?.id === listing.id && currentListing.status === "active") currentListing = { ...currentListing, status: "flagged" };
+
+  // Reflect the new flag immediately if the reporter can also see the moderation queue.
+  if (canModerate(ME)) {
+    flags = [...flags, { id, listing_id: listing.id, reporter_id: ME.id, reporter_name: ME.name, reason, status: "open", created_at: now }];
+  }
+
+  closeModal();
+  render();
+  logActivity(listing.id, "flagged", `${ME.name} reported "${listing.title}"`);
+}
+
+async function resolveFlag(flag, action) {
+  const now = new Date().toISOString();
+  const status = action === "remove" ? "actioned" : "dismissed";
+  await db(
+    `UPDATE flags SET status = ?, resolved_by = ?, resolved_at = ? WHERE id = ?`,
+    [status, ME.id, now, flag.id]
+  );
+
+  if (action === "remove") {
+    await db(`UPDATE listings SET status = 'removed', updated_at = ? WHERE id = ?`, [now, flag.listing_id]);
+    const idx = listings.findIndex(l => l.id === flag.listing_id);
+    if (idx !== -1) listings[idx] = { ...listings[idx], status: "removed" };
+  } else {
+    await db(`UPDATE listings SET status = 'active', updated_at = ? WHERE id = ? AND status = 'flagged'`, [now, flag.listing_id]);
+    const idx = listings.findIndex(l => l.id === flag.listing_id);
+    if (idx !== -1 && listings[idx].status === "flagged") listings[idx] = { ...listings[idx], status: "active" };
+  }
+
+  flags = flags.filter(f => f.id !== flag.id);
+  render();
+  logActivity(flag.listing_id, "moderated", `${ME.name} ${action === "remove" ? "removed" : "dismissed a report on"} a listing`);
+}
+
+// ── Modal ──────────────────────────────────────────────────────────────────────
+function openModal(html) {
+  closeModal();
+  modalEl = document.createElement("div");
+  modalEl.className = "modal-backdrop";
+  modalEl.innerHTML = `<div class="modal">${html}</div>`;
+  modalEl.addEventListener("click", e => { if (e.target === modalEl) closeModal(); });
+  document.body.appendChild(modalEl);
+}
+function closeModal() { modalEl?.remove(); modalEl = null; pendingPhotoFiles = []; }
+window.closeModal = closeModal;
+
+// ── Listing form (create / edit) ───────────────────────────────────────────────
+let pendingPhotoFiles = [];
+
+function categoryOptions(selected) {
+  return CATEGORIES.map(c =>
+    `<option value="${c.id}" ${c.id === selected ? "selected" : ""}>${c.icon} ${esc(c.label)}</option>`
+  ).join("");
+}
+
+function renderUploadGrid() {
+  if (!pendingPhotoFiles.length) return "";
+  return `<div class="upload-grid">${pendingPhotoFiles.map((f, i) => `
+    <div class="upload-thumb">
+      <img src="${URL.createObjectURL(f)}" alt="" />
+      <button type="button" class="remove-photo" onclick="removePendingPhoto(${i})" aria-label="Remove photo">✕</button>
+    </div>`).join("")}</div>`;
+}
+
+window.removePendingPhoto = function(idx) {
+  pendingPhotoFiles.splice(idx, 1);
+  const grid = modalEl?.querySelector(".upload-grid-wrap");
+  if (grid) grid.innerHTML = renderUploadGrid();
+};
+
+window.handlePhotoSelect = function(input) {
+  const files2 = Array.from(input.files ?? []);
+  pendingPhotoFiles = [...pendingPhotoFiles, ...files2].slice(0, 6);
+  input.value = "";
+  const grid = modalEl?.querySelector(".upload-grid-wrap");
+  if (grid) grid.innerHTML = renderUploadGrid();
+};
+
+function openListingForm(existing = null) {
+  pendingPhotoFiles = [];
+  const isEdit = !!existing;
+  const uploadHtml = FILES_URL ? `
+    <div class="field">
+      <label>Photos <span style="font-weight:400;color:var(--muted)">(up to 6)</span></label>
+      <label class="upload-area">
+        📷 Click to add photos
+        <input type="file" accept="image/*" multiple style="display:none" onchange="handlePhotoSelect(this)" />
+      </label>
+      <div class="upload-grid-wrap">${renderUploadGrid()}</div>
+      ${isEdit ? `<div class="field-hint">New photos are added alongside existing ones.</div>` : ""}
+    </div>` : "";
+
+  openModal(`
+    <h2>${isEdit ? "Edit listing" : "New listing"}</h2>
+    <div class="field">
+      <label for="f-title">Title</label>
+      <input id="f-title" type="text" maxlength="120" value="${esc(existing?.title ?? "")}" placeholder="e.g. Kids bike, 16in wheels" />
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label for="f-price">Price <span style="font-weight:400;color:var(--muted)">(leave blank for free/trade)</span></label>
+        <input id="f-price" type="number" min="0" step="1" value="${existing?.price_cents != null ? (existing.price_cents / 100) : ""}" placeholder="0" />
+      </div>
+      <div class="field">
+        <label for="f-category">Category</label>
+        <select id="f-category">${categoryOptions(existing?.category ?? "other")}</select>
+      </div>
+    </div>
+    <div class="field">
+      <label for="f-description">Description</label>
+      <textarea id="f-description" maxlength="2000" placeholder="Condition, dimensions, why you're letting it go…">${esc(existing?.description ?? "")}</textarea>
+    </div>
+    <div class="field">
+      <label for="f-pickup">Pickup details</label>
+      <input id="f-pickup" type="text" maxlength="200" value="${esc(existing?.pickup_details ?? "")}" placeholder="e.g. Front porch, weekday evenings" />
+    </div>
+    ${uploadHtml}
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitListingForm(${existing ? `'${existing.id}'` : "null"})">${isEdit ? "Save" : "Post listing"}</button>
+    </div>
+  `);
+  setTimeout(() => document.getElementById("f-title")?.focus(), 0);
+}
+window.openListingForm = openListingForm;
+window.editListing = id => openListingForm(listings.find(l => l.id === id));
+
+window.submitListingForm = async function(existingId) {
+  const title = document.getElementById("f-title").value.trim();
+  const priceRaw = document.getElementById("f-price").value.trim();
+  const category = document.getElementById("f-category").value;
+  const description = document.getElementById("f-description").value.trim();
+  const pickup_details = document.getElementById("f-pickup").value.trim();
+
+  if (!title) { document.getElementById("f-title").focus(); return; }
+
+  const price_cents = priceRaw === "" ? null : Math.max(0, Math.round(parseFloat(priceRaw) * 100));
+  const fields = { title, description, price_cents, category, pickup_details };
+
+  const btn = modalEl?.querySelector(".modal-actions .btn-primary");
+  if (btn) { btn.disabled = true; btn.textContent = existingId ? "Saving…" : "Posting…"; }
+
+  try {
+    if (existingId) {
+      const existing = listings.find(l => l.id === existingId);
+      await updateListing(existing, fields);
+      if (pendingPhotoFiles.length) await addPhotosToListing(existing.id, pendingPhotoFiles);
+    } else {
+      await createListing(fields, pendingPhotoFiles);
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = existingId ? "Save" : "Post listing"; }
+    throw e;
+  }
+};
+
+async function addPhotosToListing(listingId, files2) {
+  const existing = listingPhotos.get(listingId) ?? await loadPhotosFor(listingId);
+  let pos = existing.length;
+  for (const f of files2) {
+    try {
+      const { id: fileId } = await files.upload(f);
+      const photoId = uuid();
+      const now = new Date().toISOString();
+      await db(`INSERT INTO listing_photos (id, listing_id, file_id, position, created_at) VALUES (?, ?, ?, ?, ?)`,
+        [photoId, listingId, fileId, pos, now]);
+      existing.push({ id: photoId, file_id: fileId, position: pos });
+      pos++;
+    } catch { /* skip failed uploads */ }
+  }
+  listingPhotos.set(listingId, existing);
+  if (currentListing?.id === listingId) { currentPhotoIdx = 0; render(); }
+}
+
+// ── Report / flag form ─────────────────────────────────────────────────────────
+function openReportForm(listing) {
+  openModal(`
+    <h2>Report listing</h2>
+    <p style="font-size:0.86rem;color:var(--muted);margin-bottom:14px;">
+      Let leadership know why "${esc(listing.title)}" should be reviewed. They'll see this in the moderation queue.
+    </p>
+    <div class="field">
+      <label for="f-reason">Reason</label>
+      <textarea id="f-reason" maxlength="500" placeholder="e.g. Item appears to be a duplicate listing / prohibited item / suspicious price"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="submitReport('${listing.id}')">Submit report</button>
+    </div>
+  `);
+  setTimeout(() => document.getElementById("f-reason")?.focus(), 0);
+}
+window.openReportForm = id => openReportForm(listings.find(l => l.id === id));
+
+window.submitReport = async function(listingId) {
+  const reason = document.getElementById("f-reason").value.trim();
+  if (!reason) { document.getElementById("f-reason").focus(); return; }
+  const btn = modalEl?.querySelector(".modal-actions .btn-danger");
+  if (btn) { btn.disabled = true; btn.textContent = "Submitting…"; }
+  try {
+    await fileFlag(listings.find(l => l.id === listingId), reason);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "Submit report"; }
+    throw e;
+  }
+};
+
+// ── Navigation ─────────────────────────────────────────────────────────────────
+window.goTo = function(v) {
+  view = v;
+  currentListing = null;
+  currentInquiry = null;
+  render();
+};
+
+window.openListing = async function(id) {
+  const listing = listings.find(l => l.id === id);
+  if (!listing) return;
+  currentListing = listing;
+  currentPhotoIdx = 0;
+  view = "listing";
+  if (!listingPhotos.has(id)) await loadPhotosFor(id);
+  render();
+};
+
+window.setCategoryFilter = function(cat) {
+  categoryFilter = cat;
+  render();
+};
+
+window.handleSearch = function(input) {
+  searchQuery = input.value;
+  render();
+};
+
+window.setPhotoIdx = function(idx) { currentPhotoIdx = idx; render(); };
+
+// ── Render: shared bits ────────────────────────────────────────────────────────
+function avatarHtml(id, name, size = "") {
+  const cls = size === "lg" ? "avatar avatar-lg" : "avatar";
+  return `<span class="${cls}" style="background:${memberColor(id)}">${esc(initial(name))}</span>`;
+}
+
+function listingPhotoThumb(listing) {
+  const photos = listingPhotos.get(listing.id);
+  if (photos && photos.length && FILES_URL) {
+    return `<img class="listing-photo" src="${files.url(photos[0].file_id)}" alt="" loading="lazy" />`;
+  }
+  return `<div class="listing-photo">${categoryIcon(listing.category)}</div>`;
+}
+
+function statusBadge(status) {
+  if (status === "sold")    return `<span class="badge badge-sold">Sold</span>`;
+  if (status === "flagged") return `<span class="badge badge-flagged">Under review</span>`;
+  if (status === "removed") return `<span class="badge badge-removed">Removed</span>`;
+  return "";
+}
+
+function renderTabs() {
+  const myCount = ME ? listings.filter(l => l.seller_id === ME.id).length : 0;
+  const inquiryCount = inquiriesForMember(inquiries, ME).length;
+  const tabs = [
+    { id: "browse", label: "Browse" },
+    { id: "my-listings", label: "My Listings", count: myCount },
+    { id: "inquiries", label: "Inquiries", count: inquiryCount },
+  ];
+  if (canModerate(ME)) tabs.push({ id: "flagged", label: "Flagged", count: openFlags(flags).length });
+
+  const activeTop = view === "listing" ? "browse" : (view === "inquiry" ? "inquiries" : view);
+
+  return `<div class="tabs">${tabs.map(t => `
+    <button class="tab ${t.id === activeTop ? "active" : ""}" onclick="goTo('${t.id}')">
+      ${esc(t.label)}
+      ${t.count ? `<span class="count">${t.count}</span>` : ""}
+    </button>`).join("")}</div>`;
+}
+
+function emptyState(icon, text, actionHtml = "") {
+  return `<div class="empty-state"><div class="icon">${icon}</div><p>${text}</p>${actionHtml}</div>`;
+}
+
+// ── Render: browse ─────────────────────────────────────────────────────────────
+function renderBrowse() {
+  const filtered = sortListings(filterListings(listings, { category: categoryFilter, query: searchQuery }));
+
+  const catTabs = `<div class="cat-tabs">
+    <button class="cat-tab ${categoryFilter === "all" ? "active" : ""}" onclick="setCategoryFilter('all')">All</button>
+    ${CATEGORIES.map(c => `<button class="cat-tab ${categoryFilter === c.id ? "active" : ""}" onclick="setCategoryFilter('${c.id}')">${c.icon} ${esc(c.label)}</button>`).join("")}
+  </div>`;
+
+  const filterBar = `<div class="filter-bar">
+    <input class="search-input" type="text" placeholder="Search listings…" value="${esc(searchQuery)}" oninput="handleSearch(this)" />
+    ${ME ? `<button class="btn btn-primary" onclick="openListingForm()">+ New listing</button>` : ""}
+  </div>`;
+
+  const grid = filtered.length ? `<div class="listing-grid">${filtered.map(l => `
+    <div class="listing-card" onclick="openListing('${l.id}')">
+      ${listingPhotoThumb(l)}
+      <div class="listing-card-body">
+        <div class="listing-price ${l.price_cents == null || l.price_cents === 0 ? "free" : ""}">${esc(formatPrice(l.price_cents))}</div>
+        <div class="listing-title">${esc(l.title)}</div>
+        <div class="listing-meta">${avatarHtml(l.seller_id, l.seller_name)} ${esc(l.seller_name)} · ${esc(formatRelativeDate(l.created_at))}</div>
+      </div>
+    </div>`).join("")}</div>`
+    : emptyState("🛍️", listings.length ? "No listings match your filters." : "No listings yet — be the first to post one!",
+        ME ? `<button class="btn btn-primary" onclick="openListingForm()">+ New listing</button>` : "");
+
+  return `${renderTabs()}${filterBar}${catTabs}${grid}`;
+}
+
+// ── Render: listing detail ─────────────────────────────────────────────────────
+function renderListingDetail() {
+  const l = currentListing;
+  if (!l) return renderBrowse();
+  const photos = listingPhotos.get(l.id) ?? [];
+  const mine = isOwnListing(l, ME);
+  const isFree = l.price_cents == null || l.price_cents === 0;
+
+  const mainPhoto = photos.length && FILES_URL
+    ? `<img class="photo-main" src="${files.url(photos[currentPhotoIdx]?.file_id ?? photos[0].file_id)}" alt="" />`
+    : `<div class="photo-main">${categoryIcon(l.category)}</div>`;
+
+  const thumbs = photos.length > 1 && FILES_URL ? `<div class="photo-thumbs">${photos.map((p, i) => `
+    <img class="photo-thumb ${i === currentPhotoIdx ? "active" : ""}" src="${files.url(p.file_id)}" alt="" onclick="setPhotoIdx(${i})" />
+  `).join("")}</div>` : "";
+
+  let actions = "";
+  if (mine) {
+    actions = `
+      ${l.status === "active" ? `<button class="btn btn-ghost btn-sm" onclick="editListing('${l.id}')">Edit</button>` : ""}
+      ${l.status === "active" ? `<button class="btn btn-primary btn-sm" onclick="confirmMarkSold('${l.id}')">Mark as sold</button>` : ""}
+      ${l.status === "sold" ? `<button class="btn btn-ghost btn-sm" onclick="confirmRelist('${l.id}')">Relist as active</button>` : ""}
+      ${l.status !== "removed" ? `<button class="btn btn-danger btn-sm" onclick="confirmRemoveListing('${l.id}')">Remove</button>` : ""}
+    `;
+  } else {
+    if (canMessageSeller(l, ME)) actions += `<button class="btn btn-primary btn-sm" onclick="startInquiryFor('${l.id}')">💬 Ask a question</button>`;
+    if (ME && l.status !== "removed") actions += `<button class="btn btn-ghost btn-sm" onclick="openReportForm('${l.id}')">🚩 Report</button>`;
+    if (canModerate(ME) && l.status !== "removed") actions += `<button class="btn btn-danger btn-sm" onclick="confirmRemoveListing('${l.id}')">Remove (leadership)</button>`;
+  }
+
+  return `
+    <button class="back-btn" onclick="goTo('browse')">← Back to browse</button>
+    <div class="detail-grid">
+      <div>
+        <div class="photo-carousel">${mainPhoto}${thumbs}</div>
+      </div>
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+          <span class="badge badge-muted">${categoryIcon(l.category)} ${esc(categoryLabel(l.category))}</span>
+          ${statusBadge(l.status)}
+        </div>
+        <div class="detail-title">${esc(l.title)}</div>
+        <div class="detail-price ${isFree ? "free" : ""}">${esc(formatPrice(l.price_cents))}</div>
+        <div class="seller-row">${avatarHtml(l.seller_id, l.seller_name, "lg")} <span>Listed by <strong>${esc(l.seller_name)}</strong> · ${esc(formatRelativeDate(l.created_at))}</span></div>
+
+        <div class="detail-section">
+          <h3>Description</h3>
+          <div class="detail-body">${l.description ? esc(l.description) : `<span style="color:var(--muted)">No description provided.</span>`}</div>
+        </div>
+
+        ${l.pickup_details ? `<div class="detail-section"><h3>Pickup details</h3><div class="detail-body">${esc(l.pickup_details)}</div></div>` : ""}
+
+        <div class="detail-actions">${actions}</div>
+      </div>
+    </div>
+  `;
+}
+
+window.startInquiryFor = async function(id) {
+  const listing = listings.find(l => l.id === id);
+  if (!listing) return;
+  await startOrOpenInquiry(listing);
+};
+
+window.confirmMarkSold = async function(id) {
+  const ok = await hubConfirm({ message: "Mark this listing as sold?", description: "It will be hidden from Browse but stays in My Listings." , confirmLabel: "Mark sold" });
+  if (ok) await setListingStatus(listings.find(l => l.id === id), "sold");
+};
+window.confirmRelist = async function(id) {
+  const ok = await hubConfirm({ message: "Relist this item as active?", confirmLabel: "Relist" });
+  if (ok) await setListingStatus(listings.find(l => l.id === id), "active");
+};
+window.confirmRemoveListing = async function(id) {
+  const ok = await hubConfirm({ message: "Remove this listing?", description: "It will no longer be visible to anyone. This can't be undone.", confirmLabel: "Remove", destructive: true });
+  if (!ok) return;
+  const listing = listings.find(l => l.id === id);
+  await setListingStatus(listing, "removed");
+  // Best-effort cleanup of any flags pointing at a now-removed listing.
+  flags = flags.filter(f => f.listing_id !== id);
+  render();
+};
+
+// ── Render: My Listings ────────────────────────────────────────────────────────
+function renderMyListings() {
+  if (!ME) return `${renderTabs()}${emptyState("👤", "Sign in to manage your own listings.")}`;
+  const mine = sortListings(filterListings(listings, { sellerId: ME.id, includeAll: true }));
+
+  const grid = mine.length ? `<div class="listing-grid">${mine.map(l => `
+    <div class="listing-card" onclick="openListing('${l.id}')">
+      ${listingPhotoThumb(l)}
+      <div class="listing-card-body">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <div class="listing-price ${l.price_cents == null || l.price_cents === 0 ? "free" : ""}">${esc(formatPrice(l.price_cents))}</div>
+          ${statusBadge(l.status)}
+        </div>
+        <div class="listing-title">${esc(l.title)}</div>
+        <div class="listing-meta">${esc(formatRelativeDate(l.created_at))}</div>
+      </div>
+    </div>`).join("")}</div>`
+    : emptyState("📭", "You haven't posted anything yet.", `<button class="btn btn-primary" onclick="openListingForm()">+ New listing</button>`);
+
+  return `${renderTabs()}
+    <div class="filter-bar"><div></div><button class="btn btn-primary" onclick="openListingForm()">+ New listing</button></div>
+    ${grid}`;
+}
+
+// ── Render: Inquiries ──────────────────────────────────────────────────────────
+function renderInquiries() {
+  if (!ME) return `${renderTabs()}${emptyState("👤", "Sign in to view your messages.")}`;
+  const mine = sortInquiries(inquiriesForMember(inquiries, ME));
+
+  if (!mine.length) return `${renderTabs()}${emptyState("💬", "No conversations yet. Ask a seller a question from any listing to start one.")}`;
+
+  const rows = mine.map(i => {
+    const listing = listings.find(l => l.id === i.listing_id);
+    const otherName = i.buyer_id === ME.id ? memberName(i.seller_id) : i.buyer_name;
+    const otherId = i.buyer_id === ME.id ? i.seller_id : i.buyer_id;
+    const role = i.buyer_id === ME.id ? "You asked" : `${esc(i.buyer_name)} asked`;
+    return `
+      <div class="thread-card" onclick="openInquiryById('${i.id}')">
+        ${avatarHtml(otherId, otherName)}
+        <div class="thread-card-info">
+          <div class="thread-card-title">${esc(listing?.title ?? "Listing no longer available")}</div>
+          <div class="thread-card-sub">${role} · with ${esc(otherName)}</div>
+        </div>
+        <div class="thread-card-meta">${esc(formatRelativeDate(i.created_at))}</div>
+      </div>`;
+  }).join("");
+
+  return `${renderTabs()}<div class="thread-list">${rows}</div>`;
+}
+
+window.openInquiryById = async function(id) {
+  const inquiry = inquiries.find(i => i.id === id);
+  if (inquiry) await openInquiry(inquiry);
+};
+
+function renderInquiryThread() {
+  const i = currentInquiry;
+  if (!i) return renderInquiries();
+  const listing = listings.find(l => l.id === i.listing_id);
+  const otherName = i.buyer_id === ME.id ? memberName(i.seller_id) : i.buyer_name;
+
+  const messages = currentMessages.length ? currentMessages.map(m => `
+    <div class="message-row ${m.sender_id === ME.id ? "mine" : ""}">
+      ${avatarHtml(m.sender_id, m.sender_name)}
+      <div>
+        <div class="message-bubble">${esc(m.body)}</div>
+        <div class="message-meta">${esc(m.sender_name)} · ${esc(formatRelativeDate(m.created_at))}</div>
+      </div>
+    </div>`).join("")
+    : `<p style="color:var(--muted);font-size:0.85rem;text-align:center;padding:20px 0;">No messages yet — say hello!</p>`;
+
+  return `
+    <button class="back-btn" onclick="goTo('inquiries')">← Back to inquiries</button>
+    <div class="card" style="padding:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:700;">${esc(listing?.title ?? "Listing")}</div>
+          <div style="font-size:0.8rem;color:var(--muted);">Conversation with ${esc(otherName)}</div>
+        </div>
+        ${listing ? `<button class="btn btn-ghost btn-sm" onclick="openListing('${listing.id}')">View listing</button>` : ""}
+      </div>
+      <div class="message-list" style="max-height:360px;overflow-y:auto;">${messages}</div>
+      <div class="compose-row">
+        <textarea id="f-message" placeholder="Type a message…" maxlength="1000"></textarea>
+        <button class="btn btn-primary" onclick="submitInquiryMessage()">Send</button>
+      </div>
+    </div>
+  `;
+}
+
+window.submitInquiryMessage = async function() {
+  const ta = document.getElementById("f-message");
+  const body = ta.value.trim();
+  if (!body) { ta.focus(); return; }
+  const btn = document.querySelector(".compose-row .btn-primary");
+  if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
+  try {
+    await sendInquiryMessage(currentInquiry, body);
+    const newTa = document.getElementById("f-message");
+    if (newTa) newTa.value = "";
+  } finally {
+    const newBtn = document.querySelector(".compose-row .btn-primary");
+    if (newBtn) { newBtn.disabled = false; newBtn.textContent = "Send"; }
+  }
+};
+
+// ── Render: Flagged (moderation queue) ────────────────────────────────────────
+function renderFlagged() {
+  if (!canModerate(ME)) return renderBrowse();
+  const queue = sortFlags(openFlags(flags));
+
+  if (!queue.length) return `${renderTabs()}${emptyState("✅", "No reports awaiting review.")}`;
+
+  const cards = queue.map(f => {
+    const listing = listings.find(l => l.id === f.listing_id);
+    return `
+      <div class="card flag-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+          <div>
+            <div style="font-weight:700;">${esc(listing?.title ?? "Listing no longer available")}</div>
+            <div style="font-size:0.78rem;color:var(--muted);">Reported by ${esc(f.reporter_name)} · ${esc(formatRelativeDate(f.created_at))}</div>
+          </div>
+          ${listing ? `<button class="btn btn-ghost btn-sm" onclick="openListing('${listing.id}')">View listing</button>` : ""}
+        </div>
+        <div class="flag-reason">${esc(f.reason)}</div>
+        <div class="flag-actions">
+          <button class="btn btn-ghost btn-sm" onclick="moderateFlag('${f.id}', 'dismiss')">Dismiss report</button>
+          <button class="btn btn-danger btn-sm" onclick="moderateFlag('${f.id}', 'remove')">Remove listing</button>
+        </div>
+      </div>`;
+  }).join("");
+
+  return `${renderTabs()}<div class="thread-list">${cards}</div>`;
+}
+
+window.moderateFlag = async function(flagId, action) {
+  const flag = flags.find(f => f.id === flagId);
+  if (!flag) return;
+  if (action === "remove") {
+    const ok = await hubConfirm({ message: "Remove this listing?", description: "It will no longer be visible to anyone.", confirmLabel: "Remove", destructive: true });
+    if (!ok) return;
+  }
+  await resolveFlag(flag, action);
+};
+
+// ── Render dispatcher ──────────────────────────────────────────────────────────
+function render() {
+  const content = document.getElementById("content");
+  switch (view) {
+    case "listing":     content.innerHTML = renderListingDetail(); break;
+    case "my-listings": content.innerHTML = renderMyListings(); break;
+    case "inquiries":   content.innerHTML = renderInquiries(); break;
+    case "inquiry":     content.innerHTML = renderInquiryThread(); scrollMessagesToBottom(); break;
+    case "flagged":     content.innerHTML = renderFlagged(); break;
+    default:            content.innerHTML = renderBrowse();
+  }
+}
+
+// ── Deep linking ───────────────────────────────────────────────────────────────
+function handleDeepLink() {
+  const params = new URLSearchParams(window.location.search);
+  const listingId = params.get("listingId");
+  if (listingId && listings.some(l => l.id === listingId)) window.openListing(listingId);
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+(async () => {
+  await Promise.all([loadMembers(), loadListings()]);
+  await Promise.all([loadInquiries(), loadFlags()]);
+  render();
+  handleDeepLink();
+})();
+</script>
+</body>
+</html>

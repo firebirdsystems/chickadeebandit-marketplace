@@ -1,0 +1,48 @@
+{
+  "id": "marketplace",
+  "name": "Marketplace",
+  "version": "1.0.0",
+  "description": "Neighborhood buy/sell/give-away board — list items with photos, browse by category, ask the seller a question, and let leadership moderate flagged listings.",
+  "entrypoint": "index.html",
+  "runtime": "static",
+  "storage": "db",
+  "category": "community",
+  "tags": [
+    "marketplace",
+    "classifieds",
+    "buy-sell",
+    "neighborhood",
+    "community"
+  ],
+  "publishes": [
+    "marketplace.listing.created"
+  ],
+  "alert_on": [
+    "marketplace.listing.created"
+  ],
+  "nav": {
+    "label": "Market"
+  },
+  "widget": {
+    "label": "Marketplace",
+    "size": "medium"
+  },
+  "data_access": {
+    "reads": [
+      "family.members"
+    ],
+    "writes": []
+  },
+  "permissions": {
+    "default_audience": "everyone",
+    "requires_approval": false
+  },
+  "resource_limits": {
+    "max_db_bytes": 52428800,
+    "max_file_bytes": 10485760,
+    "max_files_bytes": 524288000,
+    "max_store_reads_per_day": 2000,
+    "max_store_writes_per_day": 500
+  },
+  "icon": "🛍️"
+}
