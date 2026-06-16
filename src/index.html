@@ -361,7 +361,7 @@ async function loadListings() {
   const { rows } = await db(
     `SELECT id, title, description, price_cents, category, pickup_details, status,
             seller_id, seller_name, created_at, updated_at
-     FROM listings ORDER BY created_at DESC`
+     FROM app_marketplace__listings ORDER BY created_at DESC`
   );
   listings = rows ?? [];
 }
@@ -369,7 +369,7 @@ async function loadListings() {
 async function loadPhotosFor(listingId) {
   if (!DB) return [];
   const { rows } = await db(
-    `SELECT id, file_id, position FROM listing_photos WHERE listing_id = ? ORDER BY position ASC`,
+    `SELECT id, file_id, position FROM app_marketplace__listing_photos WHERE listing_id = ? ORDER BY position ASC`,
     [listingId]
   );
   const photos = rows ?? [];
@@ -381,7 +381,7 @@ async function loadInquiries() {
   if (!DB || !ME) { inquiries = []; return; }
   const { rows } = await db(
     `SELECT id, listing_id, buyer_id, buyer_name, seller_id, created_at
-     FROM inquiries WHERE buyer_id = ? OR seller_id = ? ORDER BY created_at DESC`,
+     FROM app_marketplace__inquiries WHERE buyer_id = ? OR seller_id = ? ORDER BY created_at DESC`,
     [ME.id, ME.id]
   );
   inquiries = rows ?? [];
@@ -391,7 +391,7 @@ async function loadMessagesFor(inquiryId) {
   if (!DB) return [];
   const { rows } = await db(
     `SELECT id, sender_id, sender_name, body, created_at
-     FROM inquiry_messages WHERE inquiry_id = ? ORDER BY created_at ASC`,
+     FROM app_marketplace__inquiry_messages WHERE inquiry_id = ? ORDER BY created_at ASC`,
     [inquiryId]
   );
   return rows ?? [];
@@ -401,7 +401,7 @@ async function loadFlags() {
   if (!DB || !ME || !canModerate(ME)) { flags = []; return; }
   const { rows } = await db(
     `SELECT id, listing_id, reporter_id, reporter_name, reason, status, created_at, resolved_by, resolved_at
-     FROM flags WHERE status = 'open' ORDER BY created_at ASC`
+     FROM app_marketplace__flags WHERE status = 'open' ORDER BY created_at ASC`
   );
   flags = rows ?? [];
 }
@@ -410,7 +410,7 @@ async function loadFlags() {
 async function logActivity(recordId, action, detail = "") {
   if (!DB) return;
   await db(
-    `INSERT INTO activity (id, record_id, actor_id, action, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO app_marketplace__activity (id, record_id, actor_id, action, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
     [uuid(), recordId, ME?.id ?? "system", action, detail, new Date().toISOString()]
   ).catch(() => {});
 }
@@ -440,7 +440,7 @@ async function createListing(fields, photoFiles) {
   const now = new Date().toISOString();
 
   await db(
-    `INSERT INTO listings (id, title, description, price_cents, category, pickup_details, status, seller_id, seller_name, created_at, updated_at)
+    `INSERT INTO app_marketplace__listings (id, title, description, price_cents, category, pickup_details, status, seller_id, seller_name, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`,
     [id, fields.title, fields.description, fields.price_cents, fields.category, fields.pickup_details, ME.id, ME.name, now, now]
   );
@@ -459,7 +459,7 @@ async function createListing(fields, photoFiles) {
       const { id: fileId } = await files.upload(photoFiles[i]);
       const photoId = uuid();
       await db(
-        `INSERT INTO listing_photos (id, listing_id, file_id, position, created_at) VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at) VALUES (?, ?, ?, ?, ?)`,
         [photoId, id, fileId, i, now]
       );
       photos.push({ id: photoId, file_id: fileId, position: i });
@@ -483,7 +483,7 @@ async function createListing(fields, photoFiles) {
 async function updateListing(listing, fields) {
   const now = new Date().toISOString();
   await db(
-    `UPDATE listings SET title = ?, description = ?, price_cents = ?, category = ?, pickup_details = ?, updated_at = ?
+    `UPDATE app_marketplace__listings SET title = ?, description = ?, price_cents = ?, category = ?, pickup_details = ?, updated_at = ?
      WHERE id = ?`,
     [fields.title, fields.description, fields.price_cents, fields.category, fields.pickup_details, now, listing.id]
   );
@@ -500,7 +500,7 @@ async function updateListing(listing, fields) {
 
 async function setListingStatus(listing, status) {
   const now = new Date().toISOString();
-  await db(`UPDATE listings SET status = ?, updated_at = ? WHERE id = ?`, [status, now, listing.id]);
+  await db(`UPDATE app_marketplace__listings SET status = ?, updated_at = ? WHERE id = ?`, [status, now, listing.id]);
 
   const updated = { ...listing, status, updated_at: now };
   const idx = listings.findIndex(l => l.id === listing.id);
@@ -519,9 +519,9 @@ async function startOrOpenInquiry(listing) {
     const id = uuid();
     const now = new Date().toISOString();
     await db(
-      `INSERT INTO inquiries (id, listing_id, buyer_id, buyer_name, seller_id, created_at)
+      `INSERT INTO app_marketplace__inquiries (id, listing_id, buyer_id, buyer_name, seller_id, created_at)
        VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT (household_id, listing_id, buyer_id) DO NOTHING`,
+       ON CONFLICT (listing_id, buyer_id) DO NOTHING`,
       [id, listing.id, ME.id, ME.name, listing.seller_id, now]
     ).catch(() => {});
     inquiry = { id, listing_id: listing.id, buyer_id: ME.id, buyer_name: ME.name, seller_id: listing.seller_id, created_at: now };
@@ -541,7 +541,7 @@ async function sendInquiryMessage(inquiry, body) {
   const id = uuid();
   const now = new Date().toISOString();
   await db(
-    `INSERT INTO inquiry_messages (id, inquiry_id, sender_id, sender_name, body, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO app_marketplace__inquiry_messages (id, inquiry_id, sender_id, sender_name, body, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
     [id, inquiry.id, ME.id, ME.name, body, now]
   );
 
@@ -568,10 +568,10 @@ async function fileFlag(listing, reason) {
   const id = uuid();
   const now = new Date().toISOString();
   await db(
-    `INSERT INTO flags (id, listing_id, reporter_id, reporter_name, reason, status, created_at) VALUES (?, ?, ?, ?, ?, 'open', ?)`,
+    `INSERT INTO app_marketplace__flags (id, listing_id, reporter_id, reporter_name, reason, status, created_at) VALUES (?, ?, ?, ?, ?, 'open', ?)`,
     [id, listing.id, ME.id, ME.name, reason, now]
   );
-  await db(`UPDATE listings SET status = 'flagged', updated_at = ? WHERE id = ? AND status = 'active'`, [now, listing.id]).catch(() => {});
+  await db(`UPDATE app_marketplace__listings SET status = 'flagged', updated_at = ? WHERE id = ? AND status = 'active'`, [now, listing.id]).catch(() => {});
 
   const idx = listings.findIndex(l => l.id === listing.id);
   if (idx !== -1 && listings[idx].status === "active") listings[idx] = { ...listings[idx], status: "flagged" };
@@ -591,16 +591,16 @@ async function resolveFlag(flag, action) {
   const now = new Date().toISOString();
   const status = action === "remove" ? "actioned" : "dismissed";
   await db(
-    `UPDATE flags SET status = ?, resolved_by = ?, resolved_at = ? WHERE id = ?`,
+    `UPDATE app_marketplace__flags SET status = ?, resolved_by = ?, resolved_at = ? WHERE id = ?`,
     [status, ME.id, now, flag.id]
   );
 
   if (action === "remove") {
-    await db(`UPDATE listings SET status = 'removed', updated_at = ? WHERE id = ?`, [now, flag.listing_id]);
+    await db(`UPDATE app_marketplace__listings SET status = 'removed', updated_at = ? WHERE id = ?`, [now, flag.listing_id]);
     const idx = listings.findIndex(l => l.id === flag.listing_id);
     if (idx !== -1) listings[idx] = { ...listings[idx], status: "removed" };
   } else {
-    await db(`UPDATE listings SET status = 'active', updated_at = ? WHERE id = ? AND status = 'flagged'`, [now, flag.listing_id]);
+    await db(`UPDATE app_marketplace__listings SET status = 'active', updated_at = ? WHERE id = ? AND status = 'flagged'`, [now, flag.listing_id]);
     const idx = listings.findIndex(l => l.id === flag.listing_id);
     if (idx !== -1 && listings[idx].status === "flagged") listings[idx] = { ...listings[idx], status: "active" };
   }
@@ -740,7 +740,7 @@ async function addPhotosToListing(listingId, files2) {
       const { id: fileId } = await files.upload(f);
       const photoId = uuid();
       const now = new Date().toISOString();
-      await db(`INSERT INTO listing_photos (id, listing_id, file_id, position, created_at) VALUES (?, ?, ?, ?, ?)`,
+      await db(`INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at) VALUES (?, ?, ?, ?, ?)`,
         [photoId, listingId, fileId, pos, now]);
       existing.push({ id: photoId, file_id: fileId, position: pos });
       pos++;

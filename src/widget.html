@@ -107,9 +107,8 @@ async function db(sql, params = []) {
 async function init() {
   const { rows: listings } = await db(`
     SELECT id, title, price_cents, category, created_at
-    FROM listings
-    WHERE household_id = current_setting('app.household_id', true)::uuid
-      AND status = 'active'
+    FROM app_marketplace__listings
+    WHERE status = 'active'
     ORDER BY created_at DESC
     LIMIT 5
   `);
@@ -118,7 +117,7 @@ async function init() {
   const ids = listings.map(l => l.id);
   const { rows: photos } = await db(`
     SELECT listing_id, file_id
-    FROM listing_photos
+    FROM app_marketplace__listing_photos
     WHERE listing_id IN (${ids.map(() => "?").join(",")})
       AND position = 0
   `, ids);
