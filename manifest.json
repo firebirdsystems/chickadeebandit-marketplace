@@ -17,9 +17,50 @@
   "publishes": [
     "marketplace.listing.created"
   ],
+  "publish_acls": {
+    "marketplace.listing.created": { "require_role": "member" }
+  },
   "alert_on": [
     "marketplace.listing.created"
   ],
+  "admin_config": {
+    "settings_table": "settings",
+    "keys": ["moderator_group_id"]
+  },
+  "row_policies": {
+    "listings": {
+      "kind": "owner_or_visibility",
+      "member_column": "seller_id",
+      "visibility_column": "status",
+      "everyone_values": ["active", "sold", "removed", "flagged"],
+      "write_owner_only": true,
+      "bypass_group_setting": { "settings_table": "settings", "settings_key": "moderator_group_id" }
+    },
+    "inquiries": {
+      "kind": "party_scoped",
+      "member_columns": ["buyer_id", "seller_id"],
+      "self_column": "buyer_id"
+    },
+    "inquiry_messages": {
+      "kind": "party_scoped",
+      "member_columns": ["buyer_id", "seller_id"],
+      "self_column": "sender_id"
+    },
+    "flags": {
+      "kind": "owner_only",
+      "member_column": "reporter_id",
+      "adults_bypass": false,
+      "member_can_update": false,
+      "bypass_group_setting": { "settings_table": "settings", "settings_key": "moderator_group_id" }
+    },
+    "settings": { "kind": "app_config" },
+    "activity": {
+      "kind": "owner_only",
+      "member_column": "actor_id",
+      "adults_bypass": false,
+      "member_can_update": false
+    }
+  },
   "nav": {
     "label": "Market"
   },

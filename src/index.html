@@ -541,8 +541,8 @@ async function sendInquiryMessage(inquiry, body) {
   const id = uuid();
   const now = new Date().toISOString();
   await db(
-    `INSERT INTO app_marketplace__inquiry_messages (id, inquiry_id, sender_id, sender_name, body, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-    [id, inquiry.id, ME.id, ME.name, body, now]
+    `INSERT INTO app_marketplace__inquiry_messages (id, inquiry_id, sender_id, sender_name, body, created_at, buyer_id, seller_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, inquiry.id, ME.id, ME.name, body, now, inquiry.buyer_id, inquiry.seller_id]
   );
 
   currentMessages = [...currentMessages, { id, sender_id: ME.id, sender_name: ME.name, body, created_at: now }];
@@ -571,11 +571,6 @@ async function fileFlag(listing, reason) {
     `INSERT INTO app_marketplace__flags (id, listing_id, reporter_id, reporter_name, reason, status, created_at) VALUES (?, ?, ?, ?, ?, 'open', ?)`,
     [id, listing.id, ME.id, ME.name, reason, now]
   );
-  await db(`UPDATE app_marketplace__listings SET status = 'flagged', updated_at = ? WHERE id = ? AND status = 'active'`, [now, listing.id]).catch(() => {});
-
-  const idx = listings.findIndex(l => l.id === listing.id);
-  if (idx !== -1 && listings[idx].status === "active") listings[idx] = { ...listings[idx], status: "flagged" };
-  if (currentListing?.id === listing.id && currentListing.status === "active") currentListing = { ...currentListing, status: "flagged" };
 
   // Reflect the new flag immediately if the reporter can also see the moderation queue.
   if (canModerate(ME)) {
@@ -1135,8 +1130,7 @@ function handleDeepLink() {
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 (async () => {
-  await Promise.all([loadMembers(), loadListings()]);
-  await Promise.all([loadInquiries(), loadFlags()]);
+  await Promise.all([loadMembers(), loadListings(), loadInquiries(), loadFlags()]);
   render();
   handleDeepLink();
 })();
