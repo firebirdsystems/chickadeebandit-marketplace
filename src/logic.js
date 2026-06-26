@@ -58,8 +58,23 @@ export function canMessageSeller(listing, me) {
   return listing.status === "active";
 }
 
-export function canModerate(me) {
-  return isAdult(me);
+// The hub member group acting as moderators, or null if none is configured.
+export function moderatorGroup(groups, moderatorGroupId) {
+  if (!moderatorGroupId) return null;
+  return (groups ?? []).find(g => g.id === moderatorGroupId) ?? null;
+}
+
+// Mirrors the server policy exactly: moderation (seeing the flag queue, removing a
+// listing, resolving reports) is gated on membership of the configured moderator
+// group — NOT on the adult role. With no group configured, nobody is a moderator
+// (the server's bypass_group_setting matches no one), so the moderation UI must stay
+// hidden until an admin sets the group. Returning isAdult here would show controls
+// that silently 403 server-side.
+export function canModerate(me, groups, moderatorGroupId) {
+  if (!me) return false;
+  const g = moderatorGroup(groups, moderatorGroupId);
+  if (!g) return false;
+  return (g.memberIds ?? []).includes(me.id);
 }
 
 // ── Filtering & sorting ────────────────────────────────────────────────────────

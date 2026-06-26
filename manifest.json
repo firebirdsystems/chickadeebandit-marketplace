@@ -1,7 +1,7 @@
 {
   "id": "marketplace",
   "name": "Marketplace",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Neighborhood buy/sell/give-away board — list items with photos, browse by category, ask the seller a question, and let leadership moderate flagged listings.",
   "entrypoint": "index.html",
   "runtime": "static",
@@ -35,6 +35,20 @@
       "everyone_values": ["active", "sold", "removed", "flagged"],
       "write_owner_only": true,
       "bypass_group_setting": { "settings_table": "settings", "settings_key": "moderator_group_id" }
+    },
+    "listing_photos": {
+      "kind": "inherit_visibility",
+      "fk_column": "listing_id",
+      "parent_table": "listings",
+      "writer_column": "uploaded_by",
+      "insert_owner_only": true
+    },
+    "moderations": {
+      "kind": "inherit_visibility",
+      "fk_column": "listing_id",
+      "parent_table": "listings",
+      "writer_column": "moderated_by",
+      "insert_privileged_only": true
     },
     "inquiries": {
       "kind": "party_scoped",
@@ -70,7 +84,8 @@
   },
   "data_access": {
     "reads": [
-      "family.members"
+      "family.members",
+      "family.groups"
     ],
     "writes": []
   },

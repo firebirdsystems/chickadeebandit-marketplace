@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   categoryLabel, categoryIcon, formatPrice, statusLabel,
-  isOwnListing, canEditListing, canMessageSeller, canModerate,
+  isOwnListing, canEditListing, canMessageSeller, canModerate, moderatorGroup,
   filterListings, sortListings, inquiriesForMember, sortInquiries,
   openFlags, sortFlags,
 } from "../src/logic.js";
@@ -85,12 +85,27 @@ describe("canMessageSeller", () => {
   });
 });
 
-describe("canModerate", () => {
-  it("allows adults and admins", () => {
-    expect(canModerate(adult)).toBe(true);
-    expect(canModerate(admin)).toBe(true);
+describe("canModerate / moderatorGroup", () => {
+  const mods = [{ id: "g-mods", name: "Moderators", memberIds: [adult.id] }];
+
+  it("resolves the configured moderator group", () => {
+    expect(moderatorGroup(mods, "g-mods")?.name).toBe("Moderators");
+    expect(moderatorGroup(mods, null)).toBe(null);
+    expect(moderatorGroup(mods, "g-missing")).toBe(null);
   });
-  it("blocks children", () => expect(canModerate(child)).toBe(false));
+  it("allows only members of the configured moderator group", () => {
+    expect(canModerate(adult, mods, "g-mods")).toBe(true);
+    // an adult NOT in the group is not a moderator — mirrors the server policy
+    expect(canModerate(admin, mods, "g-mods")).toBe(false);
+    expect(canModerate(child, mods, "g-mods")).toBe(false);
+  });
+  it("treats nobody as a moderator when no group is configured", () => {
+    expect(canModerate(adult, mods, null)).toBe(false);
+    expect(canModerate(admin, mods, null)).toBe(false);
+  });
+  it("returns false with no logged-in member", () => {
+    expect(canModerate(null, mods, "g-mods")).toBe(false);
+  });
 });
 
 describe("filterListings", () => {

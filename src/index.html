@@ -266,6 +266,7 @@
 <div id="app" class="app">
   <div class="page-header">
     <h1>🛍️ Marketplace</h1>
+    <div class="header-actions" id="header-actions"></div>
   </div>
   <div id="content"></div>
 </div>
@@ -277,22 +278,26 @@ import {
 } from "/hub-sdk.js";
 import {
   CATEGORIES, categoryLabel, categoryIcon, formatPrice, statusLabel,
-  isOwnListing, canEditListing, canMessageSeller, canModerate,
+  isOwnListing, canEditListing, canMessageSeller, canModerate, moderatorGroup,
   filterListings, sortListings, inquiriesForMember, sortInquiries,
   openFlags, sortFlags,
 } from "./logic.js";
 
-const CONTEXT    = window.__CONTEXT_URL    ?? "";
-const DB         = window.__DB_URL         ?? "";
-const FILES_URL  = window.__FILES_URL      ?? "";
-const APP_ID     = window.__APP_ID         ?? "marketplace";
-const ME         = window.__CURRENT_MEMBER ?? null;
+const CONTEXT          = window.__CONTEXT_URL      ?? "";
+const DB               = window.__DB_URL           ?? "";
+const FILES_URL        = window.__FILES_URL        ?? "";
+const ADMIN_CONFIG_URL = window.__ADMIN_CONFIG_URL ?? "";
+const APP_ID           = window.__APP_ID           ?? "marketplace";
+const ME               = window.__CURRENT_MEMBER   ?? null;
 
 const files = createFilesHelper(FILES_URL);
 
 // ── State ──────────────────────────────────────────────────────────────────────
 let members   = [];
 let memberMap = new Map();
+let groups    = [];
+let settings  = { moderator_group_id: null };
+let moderations = new Map(); // listing_id -> { status, reason, moderated_by, moderated_at }
 
 let view = "browse"; // browse | listing | my-listings | inquiries | inquiry | flagged
 let listings = [];
@@ -348,13 +353,40 @@ async function loadMembers() {
     return;
   }
   try {
-    const res = await fetch(`${CONTEXT}?keys=family.members`);
-    members = ((await res.json())["family.members"]) ?? [];
-  } catch { members = []; }
+    const res  = await fetch(`${CONTEXT}?keys=family.members,family.groups`);
+    const data = await res.json();
+    members = data["family.members"] ?? [];
+    groups  = data["family.groups"]  ?? [];
+  } catch { members = []; groups = []; }
   memberMap = new Map(members.map(m => [m.id, m]));
 }
 
+async function loadSettings() {
+  if (!DB) return;
+  const { rows } = await db(`SELECT key, value FROM app_marketplace__settings WHERE key = 'moderator_group_id'`);
+  for (const r of rows ?? []) {
+    if (r.key === "moderator_group_id") settings.moderator_group_id = r.value || null;
+  }
+}
+
+// Leadership/moderator removals live in a moderator-only child table; overlay an
+// effective "removed" status onto each listing so every read path (browse, detail,
+// widget) hides a removed listing even though the seller-controlled listings.status
+// column still reads 'active'. A seller cannot clear this — only a moderator can write
+// (or delete) a row in app_marketplace__moderations.
+async function loadModerations() {
+  if (!DB) { moderations = new Map(); return; }
+  const { rows } = await db(`SELECT listing_id, status, reason, moderated_by, moderated_at FROM app_marketplace__moderations`);
+  moderations = new Map((rows ?? []).map(m => [m.listing_id, m]));
+}
+
+function applyModerations() {
+  listings = listings.map(l => moderations.has(l.id) ? { ...l, status: "removed", moderated_removed: true } : l);
+}
+
 function memberName(id) { return memberMap.get(id)?.name ?? "Unknown"; }
+function moderatorGroupCfg() { return moderatorGroup(groups, settings.moderator_group_id); }
+function canModerateMe() { return canModerate(ME, groups, settings.moderator_group_id); }
 
 async function loadListings() {
   if (!DB) { listings = demoListings(); return; }
@@ -398,7 +430,7 @@ async function loadMessagesFor(inquiryId) {
 }
 
 async function loadFlags() {
-  if (!DB || !ME || !canModerate(ME)) { flags = []; return; }
+  if (!DB || !ME || !canModerateMe()) { flags = []; return; }
   const { rows } = await db(
     `SELECT id, listing_id, reporter_id, reporter_name, reason, status, created_at, resolved_by, resolved_at
      FROM app_marketplace__flags WHERE status = 'open' ORDER BY created_at ASC`
@@ -459,8 +491,8 @@ async function createListing(fields, photoFiles) {
       const { id: fileId } = await files.upload(photoFiles[i]);
       const photoId = uuid();
       await db(
-        `INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at) VALUES (?, ?, ?, ?, ?)`,
-        [photoId, id, fileId, i, now]
+        `INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)`,
+        [photoId, id, fileId, i, now, ME.id]
       );
       photos.push({ id: photoId, file_id: fileId, position: i });
     } catch { /* skip failed uploads — listing still created */ }
@@ -573,13 +605,29 @@ async function fileFlag(listing, reason) {
   );
 
   // Reflect the new flag immediately if the reporter can also see the moderation queue.
-  if (canModerate(ME)) {
+  if (canModerateMe()) {
     flags = [...flags, { id, listing_id: listing.id, reporter_id: ME.id, reporter_name: ME.name, reason, status: "open", created_at: now }];
   }
 
   closeModal();
   render();
   logActivity(listing.id, "flagged", `${ME.name} reported "${listing.title}"`);
+}
+
+// A moderator removal is recorded in the moderator-only `moderations` table
+// (insert_privileged_only). It is NOT written to listings.status — the seller owns
+// that column and could flip it back. Effective "removed" is derived from this table.
+async function removeListingAsModerator(listingId, reason = "") {
+  const now = new Date().toISOString();
+  await db(
+    `INSERT OR REPLACE INTO app_marketplace__moderations (listing_id, status, reason, moderated_by, moderated_at)
+     VALUES (?, 'removed', ?, ?, ?)`,
+    [listingId, reason, ME.id, now]
+  );
+  moderations.set(listingId, { listing_id: listingId, status: "removed", reason, moderated_by: ME.id, moderated_at: now });
+  const idx = listings.findIndex(l => l.id === listingId);
+  if (idx !== -1) listings[idx] = { ...listings[idx], status: "removed", moderated_removed: true };
+  if (currentListing?.id === listingId) currentListing = { ...currentListing, status: "removed", moderated_removed: true };
 }
 
 async function resolveFlag(flag, action) {
@@ -590,15 +638,8 @@ async function resolveFlag(flag, action) {
     [status, ME.id, now, flag.id]
   );
 
-  if (action === "remove") {
-    await db(`UPDATE app_marketplace__listings SET status = 'removed', updated_at = ? WHERE id = ?`, [now, flag.listing_id]);
-    const idx = listings.findIndex(l => l.id === flag.listing_id);
-    if (idx !== -1) listings[idx] = { ...listings[idx], status: "removed" };
-  } else {
-    await db(`UPDATE app_marketplace__listings SET status = 'active', updated_at = ? WHERE id = ? AND status = 'flagged'`, [now, flag.listing_id]);
-    const idx = listings.findIndex(l => l.id === flag.listing_id);
-    if (idx !== -1 && listings[idx].status === "flagged") listings[idx] = { ...listings[idx], status: "active" };
-  }
+  // "remove" records a moderator removal; "dismiss" just closes the report.
+  if (action === "remove") await removeListingAsModerator(flag.listing_id);
 
   flags = flags.filter(f => f.id !== flag.id);
   render();
@@ -735,8 +776,8 @@ async function addPhotosToListing(listingId, files2) {
       const { id: fileId } = await files.upload(f);
       const photoId = uuid();
       const now = new Date().toISOString();
-      await db(`INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at) VALUES (?, ?, ?, ?, ?)`,
-        [photoId, listingId, fileId, pos, now]);
+      await db(`INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)`,
+        [photoId, listingId, fileId, pos, now, ME.id]);
       existing.push({ id: photoId, file_id: fileId, position: pos });
       pos++;
     } catch { /* skip failed uploads */ }
@@ -837,7 +878,7 @@ function renderTabs() {
     { id: "my-listings", label: "My Listings", count: myCount },
     { id: "inquiries", label: "Inquiries", count: inquiryCount },
   ];
-  if (canModerate(ME)) tabs.push({ id: "flagged", label: "Flagged", count: openFlags(flags).length });
+  if (canModerateMe()) tabs.push({ id: "flagged", label: "Flagged", count: openFlags(flags).length });
 
   const activeTop = view === "listing" ? "browse" : (view === "inquiry" ? "inquiries" : view);
 
@@ -908,7 +949,7 @@ function renderListingDetail() {
   } else {
     if (canMessageSeller(l, ME)) actions += `<button class="btn btn-primary btn-sm" onclick="startInquiryFor('${l.id}')">💬 Ask a question</button>`;
     if (ME && l.status !== "removed") actions += `<button class="btn btn-ghost btn-sm" onclick="openReportForm('${l.id}')">🚩 Report</button>`;
-    if (canModerate(ME) && l.status !== "removed") actions += `<button class="btn btn-danger btn-sm" onclick="confirmRemoveListing('${l.id}')">Remove (leadership)</button>`;
+    if (canModerateMe() && l.status !== "removed") actions += `<button class="btn btn-danger btn-sm" onclick="confirmRemoveListing('${l.id}')">Remove (leadership)</button>`;
   }
 
   return `
@@ -957,7 +998,17 @@ window.confirmRemoveListing = async function(id) {
   const ok = await hubConfirm({ message: "Remove this listing?", description: "It will no longer be visible to anyone. This can't be undone.", confirmLabel: "Remove", destructive: true });
   if (!ok) return;
   const listing = listings.find(l => l.id === id);
-  await setListingStatus(listing, "removed");
+  if (!listing) return;
+  if (isOwnListing(listing, ME)) {
+    // The seller removing their own listing is a legitimate owner action.
+    await setListingStatus(listing, "removed");
+  } else if (canModerateMe()) {
+    // A leadership removal — recorded in the moderator-only table so the seller
+    // can't revert it by rewriting their own listings.status.
+    await removeListingAsModerator(id);
+  } else {
+    return;
+  }
   // Best-effort cleanup of any flags pointing at a now-removed listing.
   flags = flags.filter(f => f.listing_id !== id);
   render();
@@ -1071,7 +1122,7 @@ window.submitInquiryMessage = async function() {
 
 // ── Render: Flagged (moderation queue) ────────────────────────────────────────
 function renderFlagged() {
-  if (!canModerate(ME)) return renderBrowse();
+  if (!canModerateMe()) return renderBrowse();
   const queue = sortFlags(openFlags(flags));
 
   if (!queue.length) return `${renderTabs()}${emptyState("✅", "No reports awaiting review.")}`;
@@ -1108,6 +1159,82 @@ window.moderateFlag = async function(flagId, action) {
   await resolveFlag(flag, action);
 };
 
+// ── Settings / moderator-group config (admin only) ──────────────────────────────
+// The moderator group is the trust root for all moderation. It can only be written
+// through the admin-gated /api/admin-config endpoint (settings table is `app_config`,
+// read-only via api/db), so a member can't crown themselves moderator with raw SQL.
+function renderHeaderActions() {
+  const el = document.getElementById("header-actions");
+  if (!el) return;
+  el.innerHTML = ME?.isAdmin === true
+    ? `<button class="btn btn-ghost btn-sm" onclick="openSettingsModal()" title="Marketplace settings">⚙️ Settings</button>`
+    : "";
+}
+
+window.openSettingsModal = function() {
+  const isAdmin = ME?.isAdmin === true;
+  const g = moderatorGroupCfg();
+  const groupOpts = groups.map(grp =>
+    `<option value="${esc(grp.id)}" ${settings.moderator_group_id === grp.id ? "selected" : ""}>👥 ${esc(grp.name)}</option>`
+  ).join("");
+
+  const body = isAdmin ? `
+    <div class="field">
+      <label for="s-group">Moderator group</label>
+      <select id="s-group">
+        <option value="" ${!settings.moderator_group_id ? "selected" : ""}>None — moderation disabled</option>
+        ${groupOpts}
+      </select>
+      <div class="field-hint">
+        Members of this group can review reported listings and remove them. Removing a
+        listing is recorded so its seller can't reverse it.
+        ${!settings.moderator_group_id ? `<br><span style="color:var(--amber)">⚠️ No group set — reporting works, but no one can review or remove flagged listings until you choose a group.</span>` : ""}
+      </div>
+    </div>` : `
+    <p style="font-size:0.86rem;color:var(--muted)">
+      Moderator group: <strong>${g ? esc(g.name) : "None set"}</strong><br>
+      Only a hub admin can change this.
+    </p>`;
+
+  openModal(`
+    <h2>⚙️ Marketplace settings</h2>
+    ${body}
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+      ${isAdmin ? `<button class="btn btn-primary" onclick="saveSettings()">Save</button>` : ""}
+    </div>
+  `);
+};
+
+window.saveSettings = async function() {
+  const groupId = document.getElementById("s-group")?.value || null;
+  const btn = modalEl?.querySelector(".modal-actions .btn-primary");
+  if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+  try {
+    await saveSetting("moderator_group_id", groupId ?? "");
+    settings.moderator_group_id = groupId;
+    closeModal();
+    await loadFlags();      // queue visibility depends on the newly-configured group
+    renderHeaderActions();
+    render();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "Save"; }
+    throw e;
+  }
+};
+
+async function saveSetting(key, value) {
+  const res = await fetch(ADMIN_CONFIG_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key, value }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? "Save failed");
+  }
+}
+
 // ── Render dispatcher ──────────────────────────────────────────────────────────
 function render() {
   const content = document.getElementById("content");
@@ -1130,7 +1257,12 @@ function handleDeepLink() {
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 (async () => {
-  await Promise.all([loadMembers(), loadListings(), loadInquiries(), loadFlags()]);
+  // Members/groups + settings first: moderator-queue visibility (loadFlags) depends on
+  // knowing the configured moderator group.
+  await Promise.all([loadMembers(), loadSettings()]);
+  await Promise.all([loadListings(), loadInquiries(), loadFlags(), loadModerations()]);
+  applyModerations();
+  renderHeaderActions();
   render();
   handleDeepLink();
 })();

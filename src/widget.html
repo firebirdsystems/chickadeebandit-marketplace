@@ -105,13 +105,23 @@ async function db(sql, params = []) {
 }
 
 async function init() {
-  const { rows: listings } = await db(`
+  // Over-fetch, then drop any listing a moderator has removed. Removal lives in the
+  // moderator-only `moderations` table (not listings.status, which the seller owns),
+  // so a moderator-removed listing still reads status='active' and must be excluded
+  // here separately. The two governed tables are read in separate statements on
+  // purpose — never JOIN governed tables in one query.
+  const { rows: allActive } = await db(`
     SELECT id, title, price_cents, category, created_at
     FROM app_marketplace__listings
     WHERE status = 'active'
     ORDER BY created_at DESC
-    LIMIT 5
+    LIMIT 25
   `);
+  if (!allActive.length) return;
+
+  const { rows: removed } = await db(`SELECT listing_id FROM app_marketplace__moderations`);
+  const removedSet = new Set((removed ?? []).map(r => r.listing_id));
+  const listings = allActive.filter(l => !removedSet.has(l.id)).slice(0, 5);
   if (!listings.length) return;
 
   const ids = listings.map(l => l.id);
