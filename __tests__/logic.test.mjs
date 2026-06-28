@@ -5,6 +5,20 @@ import {
   filterListings, sortListings, inquiriesForMember, sortInquiries,
   openFlags, sortFlags,
 } from "../src/logic.js";
+import { testPrivilegedGateContract } from "./helpers/privileged-gate.mjs";
+
+// ── canModerate ───────────────────────────────────────────────────────────────
+// Fronts the moderations insert_privileged_only policy and the listings/flags
+// moderator bypass (moderator_group_id), so it must satisfy the shared
+// privileged-gate contract (mirrors the hub: no adult fallback when no moderator
+// group is configured).
+
+testPrivilegedGateContract("canModerate", canModerate, {
+  member:   { id: "a1", role: "adult" },
+  outsider: { id: "a3", role: "adult" },
+  groups:   [{ id: "g1", memberIds: ["a1", "a2"] }],
+  groupId:  "g1",
+});
 
 const adult  = { id: "u-adult",  name: "Alex",  role: "adult" };
 const admin  = { id: "u-admin",  name: "Bea",   role: "admin" };
