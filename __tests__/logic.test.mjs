@@ -66,21 +66,32 @@ describe("statusLabel", () => {
 });
 
 describe("isOwnListing / canEditListing", () => {
+  // moderator group containing `adult`; `seller` is the listing owner, not a moderator.
+  const modGroups = [{ id: "g-mod", memberIds: [adult.id] }];
+
   it("recognizes the seller as the owner", () => {
     expect(isOwnListing(listing(), seller)).toBe(true);
     expect(isOwnListing(listing(), adult)).toBe(false);
   });
-  it("lets the owner edit their own listing", () => {
-    expect(canEditListing(listing(), seller)).toBe(true);
+  it("lets the owner edit their own listing (regardless of moderator group)", () => {
+    expect(canEditListing(listing(), seller, modGroups, "g-mod")).toBe(true);
+    expect(canEditListing(listing(), seller, [], "")).toBe(true);
   });
-  it("lets adults moderate listings they don't own", () => {
-    expect(canEditListing(listing(), adult)).toBe(true);
+  it("does NOT let a non-owner adult edit when no moderator group is configured", () => {
+    // write_owner_only: a non-owner adult is scoped to their own rows server-side.
+    expect(canEditListing(listing(), adult, [], "")).toBe(false);
+  });
+  it("lets a non-owner member of the moderator group edit", () => {
+    expect(canEditListing(listing(), adult, modGroups, "g-mod")).toBe(true);
+  });
+  it("does not let a non-owner adult outside the moderator group edit", () => {
+    expect(canEditListing(listing(), admin, modGroups, "g-mod")).toBe(false);
   });
   it("does not let children edit listings they don't own", () => {
-    expect(canEditListing(listing(), child)).toBe(false);
+    expect(canEditListing(listing(), child, modGroups, "g-mod")).toBe(false);
   });
   it("returns false with no logged-in member", () => {
-    expect(canEditListing(listing(), null)).toBe(false);
+    expect(canEditListing(listing(), null, modGroups, "g-mod")).toBe(false);
   });
 });
 

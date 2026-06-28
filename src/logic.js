@@ -47,9 +47,15 @@ export function isOwnListing(listing, me) {
   return !!me && listing.seller_id === me.id;
 }
 
-export function canEditListing(listing, me) {
+// Who may modify a listing row. Mirrors the server `listings` policy
+// (owner_or_visibility + write_owner_only + moderator bypass): the owner, OR a
+// member of the configured moderator group. NOT any adult — write_owner_only
+// means non-owner adults are scoped to their own rows server-side, so showing
+// them edit/remove controls would silently no-op. Pass the moderator group so the
+// gate matches the server exactly (see canModerate).
+export function canEditListing(listing, me, groups, moderatorGroupId) {
   if (!me) return false;
-  return isOwnListing(listing, me) || isAdult(me);
+  return isOwnListing(listing, me) || canModerate(me, groups, moderatorGroupId);
 }
 
 export function canMessageSeller(listing, me) {
