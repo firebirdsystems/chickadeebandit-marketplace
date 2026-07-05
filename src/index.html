@@ -943,8 +943,8 @@ function renderListingDetail() {
     actions = `
       ${l.status === "active" ? `<button class="btn btn-ghost btn-sm" onclick="editListing('${l.id}')">Edit</button>` : ""}
       ${l.status === "active" ? `<button class="btn btn-primary btn-sm" onclick="confirmMarkSold('${l.id}')">Mark as sold</button>` : ""}
-      ${l.status === "sold" ? `<button class="btn btn-ghost btn-sm" onclick="confirmRelist('${l.id}')">Relist as active</button>` : ""}
-      ${l.status !== "removed" ? `<button class="btn btn-danger btn-sm" onclick="confirmRemoveListing('${l.id}')">Remove</button>` : ""}
+      ${l.status === "sold" ? `<button class="btn btn-ghost btn-sm" onclick="confirmRelist('${l.id}')">Relist as new listing</button>` : ""}
+      ${l.status === "active" ? `<button class="btn btn-danger btn-sm" onclick="confirmRemoveListing('${l.id}')">Remove</button>` : ""}
     `;
   } else {
     if (canMessageSeller(l, ME)) actions += `<button class="btn btn-primary btn-sm" onclick="startInquiryFor('${l.id}')">💬 Ask a question</button>`;
@@ -987,13 +987,49 @@ window.startInquiryFor = async function(id) {
 };
 
 window.confirmMarkSold = async function(id) {
-  const ok = await hubConfirm({ message: "Mark this listing as sold?", description: "It will be hidden from Browse but stays in My Listings." , confirmLabel: "Mark sold" });
+  const ok = await hubConfirm({ message: "Mark this listing as sold?", description: "It will be hidden from Browse and locked as a sale record. You can relist it later as a new listing.", confirmLabel: "Mark sold" });
   if (ok) await setListingStatus(listings.find(l => l.id === id), "sold");
 };
 window.confirmRelist = async function(id) {
-  const ok = await hubConfirm({ message: "Relist this item as active?", confirmLabel: "Relist" });
-  if (ok) await setListingStatus(listings.find(l => l.id === id), "active");
+  const ok = await hubConfirm({ message: "Relist this item?", description: "Sold listings are locked, so this creates a fresh active listing with the same details and photos.", confirmLabel: "Relist" });
+  if (!ok) return;
+  const listing = listings.find(l => l.id === id);
+  if (listing) await relistListing(listing);
 };
+
+// Sold rows are frozen (frozen_when), so relisting clones the listing into a
+// new active row instead of flipping the old row's status back.
+async function relistListing(listing) {
+  const newId = uuid();
+  const now = new Date().toISOString();
+  await db(
+    `INSERT INTO app_marketplace__listings (id, title, description, price_cents, category, pickup_details, status, seller_id, seller_name, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`,
+    [newId, listing.title, listing.description, listing.price_cents, listing.category, listing.pickup_details, ME.id, ME.name, now, now]
+  );
+  const newListing = { ...listing, id: newId, status: "active", seller_id: ME.id, seller_name: ME.name, created_at: now, updated_at: now };
+  listings = [newListing, ...listings];
+
+  // Photo rows are cheap and uploaded files are never deleted, so the copies
+  // can point at the same stored files.
+  const photos = listingPhotos.get(listing.id) ?? [];
+  const copies = [];
+  for (let i = 0; i < photos.length; i++) {
+    const photoId = uuid();
+    await db(
+      `INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)`,
+      [photoId, newId, photos[i].file_id, i, now, ME.id]
+    ).catch(() => {});
+    copies.push({ id: photoId, file_id: photos[i].file_id, position: i });
+  }
+  listingPhotos.set(newId, copies);
+
+  currentListing = newListing;
+  currentPhotoIdx = 0;
+  view = "listing";
+  render();
+  logActivity(newId, "relisted", `${ME.name} relisted "${listing.title}"`);
+}
 window.confirmRemoveListing = async function(id) {
   const ok = await hubConfirm({ message: "Remove this listing?", description: "It will no longer be visible to anyone. This can't be undone.", confirmLabel: "Remove", destructive: true });
   if (!ok) return;
