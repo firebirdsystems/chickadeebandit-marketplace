@@ -447,11 +447,16 @@ async function logActivity(recordId, action, detail = "") {
   ).catch(() => {});
 }
 
-async function notify(title, body) {
+// `audience` omitted → household-wide (fine for public events like a new listing).
+// Pass a specific member id to scope a push to a single recipient — never broadcast
+// a preview of private buyer↔seller message content to the whole household.
+async function notify(title, body, audience) {
+  const payload = { title, body, url: `/run/${APP_ID}` };
+  if (audience !== undefined) payload.audience = audience;
   await fetch(window.__NOTIFY_URL ?? "/api/notifications/send", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, body, url: `/run/${APP_ID}` }),
+    body: JSON.stringify(payload),
   }).catch(() => {});
 }
 
@@ -582,9 +587,14 @@ async function sendInquiryMessage(inquiry, body) {
   scrollMessagesToBottom();
 
   const listing = listings.find(l => l.id === inquiry.listing_id);
+  // The message is confidential to the two parties (inquiries are party_scoped), so
+  // scope the push to the other party only — a household-wide "all" audience would
+  // leak the private message preview to everyone. (Adults can target a member id;
+  // for a non-adult sender the platform drops it rather than broadcasting.)
+  const recipientId = ME.id === inquiry.buyer_id ? inquiry.seller_id : inquiry.buyer_id;
   Promise.all([
     logActivity(inquiry.id, "message", `${ME.name} sent a message about "${listing?.title ?? "a listing"}"`),
-    notify(`New question about "${listing?.title ?? "your listing"}"`, `${ME.name}: ${body.slice(0, 120)}`),
+    notify(`New question about "${listing?.title ?? "your listing"}"`, `${ME.name}: ${body.slice(0, 120)}`, recipientId),
   ]).catch(() => {});
 }
 
@@ -731,7 +741,7 @@ function openListingForm(existing = null) {
     ${uploadHtml}
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitListingForm(${existing ? `'${existing.id}'` : "null"})">${isEdit ? "Save" : "Post listing"}</button>
+      <button class="btn btn-primary" data-action="submit-listing" data-id="${existing ? esc(existing.id) : ""}">${isEdit ? "Save" : "Post listing"}</button>
     </div>
   `);
   setTimeout(() => document.getElementById("f-title")?.focus(), 0);
@@ -799,7 +809,7 @@ function openReportForm(listing) {
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-danger" onclick="submitReport('${listing.id}')">Submit report</button>
+      <button class="btn btn-danger" data-action="submit-report" data-id="${esc(listing.id)}">Submit report</button>
     </div>
   `);
   setTimeout(() => document.getElementById("f-reason")?.focus(), 0);
@@ -908,7 +918,7 @@ function renderBrowse() {
   </div>`;
 
   const grid = filtered.length ? `<div class="listing-grid">${filtered.map(l => `
-    <div class="listing-card" onclick="openListing('${l.id}')">
+    <div class="listing-card" data-action="open-listing" data-id="${esc(l.id)}">
       ${listingPhotoThumb(l)}
       <div class="listing-card-body">
         <div class="listing-price ${l.price_cents == null || l.price_cents === 0 ? "free" : ""}">${esc(formatPrice(l.price_cents))}</div>
@@ -941,15 +951,15 @@ function renderListingDetail() {
   let actions = "";
   if (mine) {
     actions = `
-      ${l.status === "active" ? `<button class="btn btn-ghost btn-sm" onclick="editListing('${l.id}')">Edit</button>` : ""}
-      ${l.status === "active" ? `<button class="btn btn-primary btn-sm" onclick="confirmMarkSold('${l.id}')">Mark as sold</button>` : ""}
-      ${l.status === "sold" ? `<button class="btn btn-ghost btn-sm" onclick="confirmRelist('${l.id}')">Relist as new listing</button>` : ""}
-      ${l.status === "active" ? `<button class="btn btn-danger btn-sm" onclick="confirmRemoveListing('${l.id}')">Remove</button>` : ""}
+      ${l.status === "active" ? `<button class="btn btn-ghost btn-sm" data-action="edit-listing" data-id="${esc(l.id)}">Edit</button>` : ""}
+      ${l.status === "active" ? `<button class="btn btn-primary btn-sm" data-action="mark-sold" data-id="${esc(l.id)}">Mark as sold</button>` : ""}
+      ${l.status === "sold" ? `<button class="btn btn-ghost btn-sm" data-action="relist" data-id="${esc(l.id)}">Relist as new listing</button>` : ""}
+      ${l.status === "active" ? `<button class="btn btn-danger btn-sm" data-action="remove-listing" data-id="${esc(l.id)}">Remove</button>` : ""}
     `;
   } else {
-    if (canMessageSeller(l, ME)) actions += `<button class="btn btn-primary btn-sm" onclick="startInquiryFor('${l.id}')">💬 Ask a question</button>`;
-    if (ME && l.status !== "removed") actions += `<button class="btn btn-ghost btn-sm" onclick="openReportForm('${l.id}')">🚩 Report</button>`;
-    if (canModerateMe() && l.status !== "removed") actions += `<button class="btn btn-danger btn-sm" onclick="confirmRemoveListing('${l.id}')">Remove (leadership)</button>`;
+    if (canMessageSeller(l, ME)) actions += `<button class="btn btn-primary btn-sm" data-action="start-inquiry" data-id="${esc(l.id)}">💬 Ask a question</button>`;
+    if (ME && l.status !== "removed") actions += `<button class="btn btn-ghost btn-sm" data-action="open-report" data-id="${esc(l.id)}">🚩 Report</button>`;
+    if (canModerateMe() && l.status !== "removed") actions += `<button class="btn btn-danger btn-sm" data-action="remove-listing" data-id="${esc(l.id)}">Remove (leadership)</button>`;
   }
 
   return `
@@ -1056,7 +1066,7 @@ function renderMyListings() {
   const mine = sortListings(filterListings(listings, { sellerId: ME.id, includeAll: true }));
 
   const grid = mine.length ? `<div class="listing-grid">${mine.map(l => `
-    <div class="listing-card" onclick="openListing('${l.id}')">
+    <div class="listing-card" data-action="open-listing" data-id="${esc(l.id)}">
       ${listingPhotoThumb(l)}
       <div class="listing-card-body">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
@@ -1087,7 +1097,7 @@ function renderInquiries() {
     const otherId = i.buyer_id === ME.id ? i.seller_id : i.buyer_id;
     const role = i.buyer_id === ME.id ? "You asked" : `${esc(i.buyer_name)} asked`;
     return `
-      <div class="thread-card" onclick="openInquiryById('${i.id}')">
+      <div class="thread-card" data-action="open-inquiry" data-id="${esc(i.id)}">
         ${avatarHtml(otherId, otherName)}
         <div class="thread-card-info">
           <div class="thread-card-title">${esc(listing?.title ?? "Listing no longer available")}</div>
@@ -1129,7 +1139,7 @@ function renderInquiryThread() {
           <div style="font-weight:700;">${esc(listing?.title ?? "Listing")}</div>
           <div style="font-size:0.8rem;color:var(--muted);">Conversation with ${esc(otherName)}</div>
         </div>
-        ${listing ? `<button class="btn btn-ghost btn-sm" onclick="openListing('${listing.id}')">View listing</button>` : ""}
+        ${listing ? `<button class="btn btn-ghost btn-sm" data-action="open-listing" data-id="${esc(listing.id)}">View listing</button>` : ""}
       </div>
       <div class="message-list" style="max-height:360px;overflow-y:auto;">${messages}</div>
       <div class="compose-row">
@@ -1172,12 +1182,12 @@ function renderFlagged() {
             <div style="font-weight:700;">${esc(listing?.title ?? "Listing no longer available")}</div>
             <div style="font-size:0.78rem;color:var(--muted);">Reported by ${esc(f.reporter_name)} · ${esc(formatRelativeDate(f.created_at))}</div>
           </div>
-          ${listing ? `<button class="btn btn-ghost btn-sm" onclick="openListing('${listing.id}')">View listing</button>` : ""}
+          ${listing ? `<button class="btn btn-ghost btn-sm" data-action="open-listing" data-id="${esc(listing.id)}">View listing</button>` : ""}
         </div>
         <div class="flag-reason">${esc(f.reason)}</div>
         <div class="flag-actions">
-          <button class="btn btn-ghost btn-sm" onclick="moderateFlag('${f.id}', 'dismiss')">Dismiss report</button>
-          <button class="btn btn-danger btn-sm" onclick="moderateFlag('${f.id}', 'remove')">Remove listing</button>
+          <button class="btn btn-ghost btn-sm" data-action="moderate-flag" data-id="${esc(f.id)}" data-mod="dismiss">Dismiss report</button>
+          <button class="btn btn-danger btn-sm" data-action="moderate-flag" data-id="${esc(f.id)}" data-mod="remove">Remove listing</button>
         </div>
       </div>`;
   }).join("");
@@ -1290,6 +1300,33 @@ function handleDeepLink() {
   const listingId = params.get("listingId");
   if (listingId && listings.some(l => l.id === listingId)) window.openListing(listingId);
 }
+
+// ── Delegated action handler ───────────────────────────────────────────────────
+// Row ids (listing/inquiry/flag) come from the DB and are attacker-controllable via
+// raw /api/db, so they must never be interpolated into inline onclick handlers (an
+// id like `');…//` breaks out even when HTML-escaped, because the browser decodes
+// the attribute before the JS parser runs). Carry ids on data-* attributes and
+// dispatch here. Bound to document so it also covers buttons inside modals.
+const ACTION_DISPATCH = {
+  "open-listing":  (id) => window.openListing(id),
+  "edit-listing":  (id) => window.editListing(id),
+  "mark-sold":     (id) => window.confirmMarkSold(id),
+  "relist":        (id) => window.confirmRelist(id),
+  "remove-listing":(id) => window.confirmRemoveListing(id),
+  "start-inquiry": (id) => window.startInquiryFor(id),
+  "open-report":   (id) => window.openReportForm(id),
+  "submit-report": (id) => window.submitReport(id),
+  "submit-listing":(id) => window.submitListingForm(id || null),
+  "open-inquiry":  (id) => window.openInquiryById(id),
+};
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-action][data-id]");
+  if (!el) return;
+  const action = el.dataset.action;
+  const id = el.dataset.id;
+  if (action === "moderate-flag") { window.moderateFlag(id, el.dataset.mod); return; }
+  ACTION_DISPATCH[action]?.(id);
+});
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 (async () => {
