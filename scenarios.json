@@ -1,0 +1,167 @@
+{
+  "scenarios": [
+    {
+      "name": "sold listings are frozen even for the seller; active listings stay editable",
+      "members": {
+        "seller": "adult"
+      },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__listings (id, title, status, seller_id, seller_name, created_at, updated_at) VALUES (?, ?, 'sold', ?, ?, ?, ?)",
+          "params": [
+            "l-sold",
+            "Old bike",
+            "{{seller}}",
+            "Seller",
+            "2026-01-01T00:00:00Z",
+            "2026-01-01T00:00:00Z"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__listings (id, title, status, seller_id, seller_name, created_at, updated_at) VALUES (?, ?, 'active', ?, ?, ?, ?)",
+          "params": [
+            "l-active",
+            "Desk lamp",
+            "{{seller}}",
+            "Seller",
+            "2026-01-01T00:00:00Z",
+            "2026-01-01T00:00:00Z"
+          ]
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "UPDATE app_marketplace__listings SET title = 'tampered' WHERE id = ?",
+          "params": [
+            "l-sold"
+          ],
+          "expect": {
+            "status": 200
+          }
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "SELECT id, title FROM app_marketplace__listings WHERE id = ?",
+          "params": [
+            "l-sold"
+          ],
+          "expect": {
+            "status": 200,
+            "rowCount": 1,
+            "rowsContain": [
+              {
+                "title": "Old bike"
+              }
+            ]
+          }
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "UPDATE app_marketplace__listings SET title = 'Desk lamp (updated)' WHERE id = ?",
+          "params": [
+            "l-active"
+          ],
+          "expect": {
+            "status": 200
+          }
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "SELECT title FROM app_marketplace__listings WHERE id = ?",
+          "params": [
+            "l-active"
+          ],
+          "expect": {
+            "status": 200,
+            "rowCount": 1,
+            "rowsContain": [
+              {
+                "title": "Desk lamp (updated)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "inquiries are visible only to buyer and seller; moderations require the moderator group",
+      "members": {
+        "seller": "adult",
+        "buyer": "adult",
+        "outsider": "adult"
+      },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__listings (id, title, status, seller_id, seller_name, created_at, updated_at) VALUES (?, ?, 'active', ?, ?, ?, ?)",
+          "params": [
+            "l1",
+            "Couch",
+            "{{seller}}",
+            "Seller",
+            "2026-01-01T00:00:00Z",
+            "2026-01-01T00:00:00Z"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__inquiries (id, listing_id, buyer_id, buyer_name, seller_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": [
+            "inq1",
+            "l1",
+            "{{buyer}}",
+            "Buyer",
+            "{{seller}}",
+            "2026-01-02T00:00:00Z"
+          ]
+        },
+        {
+          "action": "db",
+          "as": "buyer",
+          "sql": "SELECT id FROM app_marketplace__inquiries",
+          "expect": {
+            "status": 200,
+            "rowCount": 1
+          }
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "SELECT id FROM app_marketplace__inquiries",
+          "expect": {
+            "status": 200,
+            "rowCount": 1
+          }
+        },
+        {
+          "action": "db",
+          "as": "outsider",
+          "sql": "SELECT id FROM app_marketplace__inquiries",
+          "expect": {
+            "status": 200,
+            "rowCount": 0
+          }
+        },
+        {
+          "action": "db",
+          "as": "outsider",
+          "sql": "INSERT INTO app_marketplace__moderations (id, listing_id, moderated_by, action, reason, created_at) VALUES (?, ?, ?, 'remove', '', ?)",
+          "params": [
+            "mod1",
+            "l1",
+            "{{outsider}}",
+            "2026-01-03T00:00:00Z"
+          ],
+          "expect": {
+            "status": 403
+          }
+        }
+      ]
+    }
+  ]
+}
