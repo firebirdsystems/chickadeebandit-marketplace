@@ -1,7 +1,7 @@
 {
   "id": "marketplace",
   "name": "Marketplace",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Neighborhood buy/sell/give-away board — list items with photos, browse by category, ask the seller a question, and let leadership moderate flagged listings.",
   "entrypoint": "index.html",
   "runtime": "static",
@@ -76,7 +76,8 @@
       "kind": "owner_only",
       "member_column": "actor_id",
       "adults_bypass": false,
-      "member_can_update": false
+      "member_can_update": false,
+      "retain_days": { "default": 365, "timestamp_column": "created_at", "override_key": "activity_history" }
     }
   },
   "nav": {
