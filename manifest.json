@@ -1,5 +1,6 @@
 {
   "id": "marketplace",
+  "contexts": ["household", "shared_space"],
   "name": "Marketplace",
   "version": "1.1.0",
   "description": "Neighborhood buy/sell/give-away board — list items with photos, browse by category, ask the seller a question, and let leadership moderate flagged listings.",
