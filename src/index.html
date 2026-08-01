@@ -317,6 +317,11 @@ let searchQuery = "";
 let modalEl = null;
 
 // ── DB helper ──────────────────────────────────────────────────────────────────
+// This helper used to `return res.json()` unconditionally, so a policy 403 or a
+// quota 507 came back as `{ error: "..." }` and every caller read it as success:
+// the app rendered the optimistic row, logged the activity and sent the push for
+// a write that never landed. Surface the failure instead — the submit handlers
+// already re-enable their buttons and rethrow.
 async function db(sql, params = []) {
   if (!DB) return { rows: [] };
   const res = await fetch(DB, {
@@ -324,7 +329,25 @@ async function db(sql, params = []) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sql, params }),
   });
-  return res.json();
+  const json = await res.json();
+  if (json.error) throw new Error(json.error);
+  return json;
+}
+
+// Atomic multi-statement form of /api/db. D1 runs a batch transactionally, so
+// writes that must land together (closing a report AND recording the moderator
+// removal it authorises) land whole or not at all. Throws on rejection so a
+// refused batch is never treated as applied.
+async function dbBatch(statements) {
+  if (!DB || !statements.length) return [];
+  const res = await fetch(DB, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ statements }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body?.error ?? `batch failed (${res.status})`);
+  return body.results ?? [];
 }
 
 function uuid() { return crypto.randomUUID(); }
@@ -393,7 +416,7 @@ async function loadListings() {
   const { rows } = await db(
     `SELECT id, title, description, price_cents, category, pickup_details, status,
             seller_id, seller_name, created_at, updated_at
-     FROM app_marketplace__listings ORDER BY created_at DESC`
+     FROM app_marketplace__listings ORDER BY created_at DESC LIMIT 500`
   );
   listings = rows ?? [];
 }
@@ -555,12 +578,18 @@ async function startOrOpenInquiry(listing) {
   if (!inquiry) {
     const id = uuid();
     const now = new Date().toISOString();
+    // Do NOT swallow this. It used to be `.catch(() => {})` followed by an
+    // unconditional local `inquiry` object, so a rejected insert (403 from the
+    // party_scoped policy, a quota 507) still produced a thread the app then
+    // wrote messages into — every one carrying an inquiry_id with no parent row,
+    // invisible to both parties on the next load. Let the error reach the caller
+    // instead: never proceed on a write you did not confirm landed.
     await db(
       `INSERT INTO app_marketplace__inquiries (id, listing_id, buyer_id, buyer_name, seller_id, created_at)
        VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT (listing_id, buyer_id) DO NOTHING`,
       [id, listing.id, ME.id, ME.name, listing.seller_id, now]
-    ).catch(() => {});
+    );
     inquiry = { id, listing_id: listing.id, buyer_id: ME.id, buyer_name: ME.name, seller_id: listing.seller_id, created_at: now };
     inquiries = [inquiry, ...inquiries];
   }
@@ -627,29 +656,46 @@ async function fileFlag(listing, reason) {
 // A moderator removal is recorded in the moderator-only `moderations` table
 // (insert_privileged_only). It is NOT written to listings.status — the seller owns
 // that column and could flip it back. Effective "removed" is derived from this table.
-async function removeListingAsModerator(listingId, reason = "") {
-  const now = new Date().toISOString();
-  await db(
-    `INSERT OR REPLACE INTO app_marketplace__moderations (listing_id, status, reason, moderated_by, moderated_at)
-     VALUES (?, 'removed', ?, ?, ?)`,
-    [listingId, reason, ME.id, now]
-  );
+function moderationStatement(listingId, reason, now) {
+  return {
+    sql: `INSERT OR REPLACE INTO app_marketplace__moderations (listing_id, status, reason, moderated_by, moderated_at)
+          VALUES (?, 'removed', ?, ?, ?)`,
+    params: [listingId, reason, ME.id, now],
+  };
+}
+
+function applyModerationLocally(listingId, reason, now) {
   moderations.set(listingId, { listing_id: listingId, status: "removed", reason, moderated_by: ME.id, moderated_at: now });
   const idx = listings.findIndex(l => l.id === listingId);
   if (idx !== -1) listings[idx] = { ...listings[idx], status: "removed", moderated_removed: true };
   if (currentListing?.id === listingId) currentListing = { ...currentListing, status: "removed", moderated_removed: true };
 }
 
+async function removeListingAsModerator(listingId, reason = "") {
+  const now = new Date().toISOString();
+  const stmt = moderationStatement(listingId, reason, now);
+  await db(stmt.sql, stmt.params);
+  applyModerationLocally(listingId, reason, now);
+}
+
 async function resolveFlag(flag, action) {
   const now = new Date().toISOString();
   const status = action === "remove" ? "actioned" : "dismissed";
-  await db(
-    `UPDATE app_marketplace__flags SET status = ?, resolved_by = ?, resolved_at = ? WHERE id = ?`,
-    [status, ME.id, now, flag.id]
-  );
+  const closeFlag = {
+    sql: `UPDATE app_marketplace__flags SET status = ?, resolved_by = ?, resolved_at = ? WHERE id = ?`,
+    params: [status, ME.id, now, flag.id],
+  };
 
   // "remove" records a moderator removal; "dismiss" just closes the report.
-  if (action === "remove") await removeListingAsModerator(flag.listing_id);
+  // Both statements go in ONE transactional batch: issued separately, a failure
+  // on the moderation insert left the report closed and the listing still live,
+  // with the report gone from the queue so nobody would look at it again.
+  if (action === "remove") {
+    await dbBatch([closeFlag, moderationStatement(flag.listing_id, "", now)]);
+    applyModerationLocally(flag.listing_id, "", now);
+  } else {
+    await db(closeFlag.sql, closeFlag.params);
+  }
 
   flags = flags.filter(f => f.id !== flag.id);
   render();
@@ -1330,11 +1376,17 @@ document.addEventListener("click", (e) => {
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 (async () => {
-  // Members/groups + settings first: moderator-queue visibility (loadFlags) depends on
-  // knowing the configured moderator group.
-  await Promise.all([loadMembers(), loadSettings()]);
-  await Promise.all([loadListings(), loadInquiries(), loadFlags(), loadModerations()]);
-  applyModerations();
+  try {
+    // Members/groups + settings first: moderator-queue visibility (loadFlags) depends on
+    // knowing the configured moderator group.
+    await Promise.all([loadMembers(), loadSettings()]);
+    await Promise.all([loadListings(), loadInquiries(), loadFlags(), loadModerations()]);
+    applyModerations();
+  } catch (e) {
+    // db() now throws on a rejected read; still render the shell rather than
+    // leaving a blank page.
+    console.error("marketplace: initial load failed", e);
+  }
   renderHeaderActions();
   render();
   handleDeepLink();

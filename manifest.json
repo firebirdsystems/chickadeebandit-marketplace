@@ -39,6 +39,17 @@
       "frozen_when": {
         "status_column": "status",
         "locked_values": ["sold", "removed"]
+      },
+      "retain_days": {
+        "default": 365,
+        "timestamp_column": "updated_at",
+        "override_key": "listing_history",
+        "exempt_when": { "column": "status", "values": ["active"] },
+        "dependent_tables": [
+          { "table": "listing_photos", "foreign_key": "listing_id", "file_id_column": "file_id" },
+          { "table": "moderations", "foreign_key": "listing_id" },
+          { "table": "flags", "foreign_key": "listing_id" }
+        ]
       }
     },
     "listing_photos": {
@@ -58,7 +69,15 @@
     "inquiries": {
       "kind": "party_scoped",
       "member_columns": ["buyer_id", "seller_id"],
-      "self_column": "buyer_id"
+      "self_column": "buyer_id",
+      "retain_days": {
+        "default": 365,
+        "timestamp_column": "created_at",
+        "override_key": "inquiry_history",
+        "dependent_tables": [
+          { "table": "inquiry_messages", "foreign_key": "inquiry_id" }
+        ]
+      }
     },
     "inquiry_messages": {
       "kind": "party_scoped",
@@ -80,6 +99,37 @@
       "member_can_update": false,
       "retain_days": { "default": 365, "timestamp_column": "created_at", "override_key": "activity_history" }
     }
+  },
+  "member_references": {
+    "listings": {
+      "column": "seller_id",
+      "on_removed": "delete",
+      "dependent_tables": [
+        { "table": "listing_photos", "foreign_key": "listing_id", "file_id_column": "file_id" },
+        { "table": "moderations", "foreign_key": "listing_id" },
+        { "table": "flags", "foreign_key": "listing_id" }
+      ]
+    },
+    "listing_photos": { "column": "uploaded_by", "on_removed": "keep" },
+    "moderations": { "column": "moderated_by", "on_removed": "keep" },
+    "inquiries": [
+      {
+        "column": "buyer_id",
+        "on_removed": "delete",
+        "dependent_tables": [{ "table": "inquiry_messages", "foreign_key": "inquiry_id" }]
+      },
+      { "column": "seller_id", "on_removed": "keep" }
+    ],
+    "inquiry_messages": [
+      { "column": "sender_id", "on_removed": "keep" },
+      { "column": "buyer_id", "on_removed": "keep" },
+      { "column": "seller_id", "on_removed": "keep" }
+    ],
+    "flags": [
+      { "column": "reporter_id", "on_removed": "keep" },
+      { "column": "resolved_by", "on_removed": "keep" }
+    ],
+    "activity": { "column": "actor_id", "on_removed": "keep" }
   },
   "nav": {
     "label": "Market"
