@@ -274,13 +274,13 @@
 <script type="module">
 import {
   esc, initial, memberColor, isAdult, hubConfirm, formatRelativeDate,
-  createFilesHelper,
+  createFilesHelper, searchMatch,
 } from "/hub-sdk.js";
 import {
   CATEGORIES, categoryLabel, categoryIcon, formatPrice, statusLabel,
   isOwnListing, canEditListing, canMessageSeller, canModerate, moderatorGroup,
   filterListings, sortListings, inquiriesForMember, sortInquiries,
-  openFlags, sortFlags,
+  openFlags, sortFlags, searchableFields,
 } from "./logic.js";
 
 const CONTEXT          = window.__CONTEXT_URL      ?? "";
@@ -951,7 +951,9 @@ function emptyState(icon, text, actionHtml = "") {
 
 // ── Render: browse ─────────────────────────────────────────────────────────────
 function renderBrowse() {
-  const filtered = sortListings(filterListings(listings, { category: categoryFilter, query: searchQuery }));
+  const inCategory = filterListings(listings, { category: categoryFilter });
+  const filtered = sortListings(
+    searchQuery ? inCategory.filter(l => searchMatch(searchQuery, searchableFields(l))) : inCategory);
 
   const catTabs = `<div class="cat-tabs">
     <button class="cat-tab ${categoryFilter === "all" ? "active" : ""}" onclick="setCategoryFilter('all')">All</button>

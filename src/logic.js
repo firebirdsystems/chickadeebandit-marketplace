@@ -85,13 +85,21 @@ export function canModerate(me, groups, moderatorGroupId) {
 
 // ── Filtering & sorting ────────────────────────────────────────────────────────
 // Browse view shows only active listings by default; "My Listings" passes includeAll.
-export function filterListings(listings, { category = "all", query = "", sellerId = null, includeAll = false } = {}) {
-  const q = query.trim().toLowerCase();
+/**
+ * Fields the in-app search matches against (see hub-sdk `searchMatch`). The
+ * description counts as well as the title — that is where the make, model and
+ * condition of a thing actually get written down.
+ */
+export function searchableFields(listing) {
+  return [listing.title, listing.description];
+}
+
+/** Status / seller / category scoping. Text search is applied by the caller. */
+export function filterListings(listings, { category = "all", sellerId = null, includeAll = false } = {}) {
   return listings.filter(l => {
     if (!includeAll && l.status !== "active") return false;
     if (sellerId && l.seller_id !== sellerId) return false;
     if (category !== "all" && l.category !== category) return false;
-    if (q && !l.title.toLowerCase().includes(q) && !l.description.toLowerCase().includes(q)) return false;
     return true;
   });
 }

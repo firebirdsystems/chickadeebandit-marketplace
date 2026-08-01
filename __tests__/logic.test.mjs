@@ -3,7 +3,7 @@ import {
   categoryLabel, categoryIcon, formatPrice, statusLabel,
   isOwnListing, canEditListing, canMessageSeller, canModerate, moderatorGroup,
   filterListings, sortListings, inquiriesForMember, sortInquiries,
-  openFlags, sortFlags,
+  openFlags, sortFlags, searchableFields,
 } from "../src/logic.js";
 import { testPrivilegedGateContract } from "./helpers/privileged-gate.mjs";
 
@@ -156,9 +156,10 @@ describe("filterListings", () => {
     expect(result.map(l => l.id)).toEqual(["l-1"]);
   });
 
-  it("filters by search query across title and description", () => {
-    expect(filterListings(listings, { query: "sectional" }).map(l => l.id)).toEqual(["l-2"]);
-    expect(filterListings(listings, { query: "bike" }).map(l => l.id)).toEqual(["l-1"]);
+  it("makes a listing findable by its description, not just its title", () => {
+    // searchableFields is what the shared matcher is pointed at; the filter
+    // itself no longer knows anything about text.
+    expect(searchableFields({ title: "Sofa", description: "grey sectional" })).toContain("grey sectional");
   });
 
   it("filters by seller", () => {
