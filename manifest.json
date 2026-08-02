@@ -131,6 +131,8 @@
     ],
     "activity": { "column": "actor_id", "on_removed": "keep" }
   },
+  "glance": {"source": {"kind": "sql", "query": "SELECT COUNT(*) AS n FROM app_marketplace__listings WHERE status = 'active' LIMIT 1"}, "display": {"template": "badge", "count": "n", "label": "listings", "severity": "info"}},
+  "automation_actions": {"create_listing": {"title": "Post a listing", "description": "Put an item up for sale or giveaway when another app's event fires - something decided as 'let go' in the declutter queue, or retired from the home inventory.", "params": {"seller_id": {"type": "member", "label": "Seller", "required": true}, "title": {"type": "text", "label": "Item", "required": true}, "category": {"type": "text", "label": "Category", "default": "other", "options": ["furniture", "electronics", "kids", "household", "clothing", "outdoor", "free", "other"]}, "description": {"type": "text", "label": "Description", "default": ""}}, "dedupe": {"table": "listings", "column": "source_event_id"}, "steps": [{"op": "insert", "table": "listings", "values": {"id": "$uuid", "title": ":title", "description": ":description", "category": ":category", "seller_id": ":seller_id", "seller_name": "Automation", "created_at": "$now", "updated_at": "$now", "source_event_id": "$event_id"}}]}},
   "nav": {
     "label": "Market"
   },

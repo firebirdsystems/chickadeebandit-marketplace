@@ -288,6 +288,7 @@ const DB               = window.__DB_URL           ?? "";
 const FILES_URL        = window.__FILES_URL        ?? "";
 const ADMIN_CONFIG_URL = window.__ADMIN_CONFIG_URL ?? "";
 const APP_ID           = window.__APP_ID           ?? "marketplace";
+const EVENTS           = window.__EVENTS_URL       ?? "/api/events";
 const ME               = window.__CURRENT_MEMBER   ?? null;
 
 const files = createFilesHelper(FILES_URL);
@@ -483,6 +484,19 @@ async function notify(title, body, audience) {
   }).catch(() => {});
 }
 
+// The typed event bus, which is a different sink from the activity feed above:
+// activity is the household's human-readable log, while an event is what drives
+// manifest `alert_on` inbox notifications and cross-app automation triggers.
+// Both are wanted here — posting only activity is what left `alert_on:
+// ["marketplace.listing.created"]` silently dead.
+async function publishEvent(type, subjectId, payload = {}) {
+  await fetch(EVENTS, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type, subject_id: subjectId, payload }),
+  }).catch(() => {});
+}
+
 async function postActivity(type, description, deepLinkParams) {
   await fetch(window.__ACTIVITY_URL ?? "/api/activity", {
     method: "POST",
@@ -537,6 +551,11 @@ async function createListing(fields, photoFiles) {
     logActivity(id, "created", `${ME.name} listed "${fields.title}"`),
     notify(`New listing: ${fields.title}`, `${ME.name} posted a new item for ${formatPrice(fields.price_cents)}.`),
     postActivity("marketplace.listing.created", `${ME.name} listed "${fields.title}" on the marketplace`, { listingId: id }),
+    publishEvent("marketplace.listing.created", id, {
+      listing_id: id,
+      title: fields.title,
+      price_cents: fields.price_cents,
+    }),
   ]).catch(() => {});
 }
 
