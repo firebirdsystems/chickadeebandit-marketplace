@@ -1,9 +1,12 @@
 {
   "id": "marketplace",
-  "contexts": ["household", "shared_space"],
+  "contexts": [
+    "household",
+    "shared_space"
+  ],
   "name": "Marketplace",
-  "version": "1.1.0",
-  "description": "Neighborhood buy/sell/give-away board — list items with photos, browse by category, ask the seller a question, and let leadership moderate flagged listings.",
+  "version": "1.2.0",
+  "description": "Neighborhood buy/sell/give-away board \u2014 list items with photos, browse by category, ask the seller a question, and let leadership moderate flagged listings.",
   "entrypoint": "index.html",
   "runtime": "static",
   "storage": "db",
@@ -19,36 +22,68 @@
     "marketplace.listing.created"
   ],
   "publish_acls": {
-    "marketplace.listing.created": { "require_role": "member" }
+    "marketplace.listing.created": {
+      "require_role": "member"
+    }
   },
   "alert_on": [
     "marketplace.listing.created"
   ],
   "admin_config": {
     "settings_table": "settings",
-    "keys": ["moderator_group_id"]
+    "keys": [
+      "moderator_group_id"
+    ]
   },
   "row_policies": {
     "listings": {
       "kind": "owner_or_visibility",
       "member_column": "seller_id",
       "visibility_column": "status",
-      "everyone_values": ["active", "sold", "removed", "flagged"],
+      "everyone_values": [
+        "active",
+        "sold",
+        "removed",
+        "flagged"
+      ],
       "write_owner_only": true,
-      "privileged_groups": [{ "settings_table": "settings", "settings_key": "moderator_group_id" }],
+      "privileged_groups": [
+        {
+          "settings_table": "settings",
+          "settings_key": "moderator_group_id"
+        }
+      ],
       "frozen_when": {
         "status_column": "status",
-        "locked_values": ["sold", "removed"]
+        "locked_values": [
+          "sold",
+          "removed"
+        ]
       },
       "retain_days": {
         "default": 365,
         "timestamp_column": "updated_at",
         "override_key": "listing_history",
-        "exempt_when": { "column": "status", "values": ["active"] },
+        "exempt_when": {
+          "column": "status",
+          "values": [
+            "active"
+          ]
+        },
         "dependent_tables": [
-          { "table": "listing_photos", "foreign_key": "listing_id", "file_id_column": "file_id" },
-          { "table": "moderations", "foreign_key": "listing_id" },
-          { "table": "flags", "foreign_key": "listing_id" }
+          {
+            "table": "listing_photos",
+            "foreign_key": "listing_id",
+            "file_id_column": "file_id"
+          },
+          {
+            "table": "moderations",
+            "foreign_key": "listing_id"
+          },
+          {
+            "table": "flags",
+            "foreign_key": "listing_id"
+          }
         ]
       }
     },
@@ -68,20 +103,29 @@
     },
     "inquiries": {
       "kind": "party_scoped",
-      "member_columns": ["buyer_id", "seller_id"],
+      "member_columns": [
+        "buyer_id",
+        "seller_id"
+      ],
       "self_column": "buyer_id",
       "retain_days": {
         "default": 365,
         "timestamp_column": "created_at",
         "override_key": "inquiry_history",
         "dependent_tables": [
-          { "table": "inquiry_messages", "foreign_key": "inquiry_id" }
+          {
+            "table": "inquiry_messages",
+            "foreign_key": "inquiry_id"
+          }
         ]
       }
     },
     "inquiry_messages": {
       "kind": "party_scoped",
-      "member_columns": ["buyer_id", "seller_id"],
+      "member_columns": [
+        "buyer_id",
+        "seller_id"
+      ],
       "self_column": "sender_id"
     },
     "flags": {
@@ -89,50 +133,177 @@
       "member_column": "reporter_id",
       "adults_bypass": false,
       "member_can_update": false,
-      "privileged_groups": [{ "settings_table": "settings", "settings_key": "moderator_group_id" }]
+      "privileged_groups": [
+        {
+          "settings_table": "settings",
+          "settings_key": "moderator_group_id"
+        }
+      ]
     },
-    "settings": { "kind": "app_config" },
+    "settings": {
+      "kind": "app_config"
+    },
     "activity": {
       "kind": "owner_only",
       "member_column": "actor_id",
       "adults_bypass": false,
       "member_can_update": false,
-      "retain_days": { "default": 365, "timestamp_column": "created_at", "override_key": "activity_history" }
+      "retain_days": {
+        "default": 365,
+        "timestamp_column": "created_at",
+        "override_key": "activity_history"
+      }
     }
+  },
+  "delete_file_columns": {
+    "listing_photos": [
+      "file_id"
+    ]
   },
   "member_references": {
     "listings": {
       "column": "seller_id",
       "on_removed": "delete",
       "dependent_tables": [
-        { "table": "listing_photos", "foreign_key": "listing_id", "file_id_column": "file_id" },
-        { "table": "moderations", "foreign_key": "listing_id" },
-        { "table": "flags", "foreign_key": "listing_id" }
+        {
+          "table": "listing_photos",
+          "foreign_key": "listing_id",
+          "file_id_column": "file_id"
+        },
+        {
+          "table": "moderations",
+          "foreign_key": "listing_id"
+        },
+        {
+          "table": "flags",
+          "foreign_key": "listing_id"
+        }
       ]
     },
-    "listing_photos": { "column": "uploaded_by", "on_removed": "keep" },
-    "moderations": { "column": "moderated_by", "on_removed": "keep" },
+    "listing_photos": {
+      "column": "uploaded_by",
+      "on_removed": "keep"
+    },
+    "moderations": {
+      "column": "moderated_by",
+      "on_removed": "keep"
+    },
     "inquiries": [
       {
         "column": "buyer_id",
         "on_removed": "delete",
-        "dependent_tables": [{ "table": "inquiry_messages", "foreign_key": "inquiry_id" }]
+        "dependent_tables": [
+          {
+            "table": "inquiry_messages",
+            "foreign_key": "inquiry_id"
+          }
+        ]
       },
-      { "column": "seller_id", "on_removed": "keep" }
+      {
+        "column": "seller_id",
+        "on_removed": "keep"
+      }
     ],
     "inquiry_messages": [
-      { "column": "sender_id", "on_removed": "keep" },
-      { "column": "buyer_id", "on_removed": "keep" },
-      { "column": "seller_id", "on_removed": "keep" }
+      {
+        "column": "sender_id",
+        "on_removed": "keep"
+      },
+      {
+        "column": "buyer_id",
+        "on_removed": "keep"
+      },
+      {
+        "column": "seller_id",
+        "on_removed": "keep"
+      }
     ],
     "flags": [
-      { "column": "reporter_id", "on_removed": "keep" },
-      { "column": "resolved_by", "on_removed": "keep" }
+      {
+        "column": "reporter_id",
+        "on_removed": "keep"
+      },
+      {
+        "column": "resolved_by",
+        "on_removed": "keep"
+      }
     ],
-    "activity": { "column": "actor_id", "on_removed": "keep" }
+    "activity": {
+      "column": "actor_id",
+      "on_removed": "keep"
+    }
   },
-  "glance": {"source": {"kind": "sql", "query": "SELECT COUNT(*) AS n FROM app_marketplace__listings WHERE status = 'active' LIMIT 1"}, "display": {"template": "badge", "count": "n", "label": "listings", "severity": "info"}},
-  "automation_actions": {"create_listing": {"title": "Post a listing", "description": "Put an item up for sale or giveaway when another app's event fires - something decided as 'let go' in the declutter queue, or retired from the home inventory.", "params": {"seller_id": {"type": "member", "label": "Seller", "required": true}, "title": {"type": "text", "label": "Item", "required": true}, "category": {"type": "text", "label": "Category", "default": "other", "options": ["furniture", "electronics", "kids", "household", "clothing", "outdoor", "free", "other"]}, "description": {"type": "text", "label": "Description", "default": ""}}, "dedupe": {"table": "listings", "column": "source_event_id"}, "steps": [{"op": "insert", "table": "listings", "values": {"id": "$uuid", "title": ":title", "description": ":description", "category": ":category", "seller_id": ":seller_id", "seller_name": "Automation", "created_at": "$now", "updated_at": "$now", "source_event_id": "$event_id"}}]}},
+  "glance": {
+    "source": {
+      "kind": "sql",
+      "query": "SELECT COUNT(*) AS n FROM app_marketplace__listings WHERE status = 'active' LIMIT 1"
+    },
+    "display": {
+      "template": "badge",
+      "count": "n",
+      "label": "listings",
+      "severity": "info"
+    }
+  },
+  "automation_actions": {
+    "create_listing": {
+      "title": "Post a listing",
+      "description": "Put an item up for sale or giveaway when another app's event fires - something decided as 'let go' in the declutter queue, or retired from the home inventory.",
+      "params": {
+        "seller_id": {
+          "type": "member",
+          "label": "Seller",
+          "required": true
+        },
+        "title": {
+          "type": "text",
+          "label": "Item",
+          "required": true
+        },
+        "category": {
+          "type": "text",
+          "label": "Category",
+          "default": "other",
+          "options": [
+            "furniture",
+            "electronics",
+            "kids",
+            "household",
+            "clothing",
+            "outdoor",
+            "free",
+            "other"
+          ]
+        },
+        "description": {
+          "type": "text",
+          "label": "Description",
+          "default": ""
+        }
+      },
+      "dedupe": {
+        "table": "listings",
+        "column": "source_event_id"
+      },
+      "steps": [
+        {
+          "op": "insert",
+          "table": "listings",
+          "values": {
+            "id": "$uuid",
+            "title": ":title",
+            "description": ":description",
+            "category": ":category",
+            "seller_id": ":seller_id",
+            "seller_name": "Automation",
+            "created_at": "$now",
+            "updated_at": "$now",
+            "source_event_id": "$event_id"
+          }
+        }
+      ]
+    }
+  },
   "nav": {
     "label": "Market"
   },
@@ -158,5 +329,5 @@
     "max_store_reads_per_day": 2000,
     "max_store_writes_per_day": 500
   },
-  "icon": "🛍️"
+  "icon": "\ud83d\udecd\ufe0f"
 }
