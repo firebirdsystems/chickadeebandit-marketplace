@@ -497,17 +497,6 @@ async function publishEvent(type, subjectId, payload = {}) {
   }).catch(() => {});
 }
 
-async function postActivity(type, description, deepLinkParams) {
-  await fetch(window.__ACTIVITY_URL ?? "/api/activity", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      type, actor: ME?.name ?? "Someone", description,
-      metadata: deepLinkParams ? { deepLink: { appId: APP_ID, params: deepLinkParams } } : undefined,
-    }),
-  }).catch(() => {});
-}
-
 // ── Listings: create / edit / status ───────────────────────────────────────────
 async function createListing(fields, photoFiles) {
   const id = uuid();
@@ -550,7 +539,6 @@ async function createListing(fields, photoFiles) {
   Promise.all([
     logActivity(id, "created", `${ME.name} listed "${fields.title}"`),
     notify(`New listing: ${fields.title}`, `${ME.name} posted a new item for ${formatPrice(fields.price_cents)}.`),
-    postActivity("marketplace.listing.created", `${ME.name} listed "${fields.title}" on the marketplace`, { listingId: id }),
     publishEvent("marketplace.listing.created", id, {
       listing_id: id,
       title: fields.title,
