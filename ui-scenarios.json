@@ -1,0 +1,223 @@
+{
+  "scenarios": [
+    {
+      "name": "the flag queue is gated on the CONFIGURED moderator group, not on belonging to some group",
+      "members": {
+        "mod": "adult",
+        "seller": "adult",
+        "reporter": "admin"
+      },
+      "steps": [
+        {
+          "action": "seedGroup",
+          "group": "social",
+          "name": "Social Committee",
+          "members": [
+            "seller"
+          ]
+        },
+        {
+          "action": "seedGroup",
+          "group": "lead",
+          "name": "Leadership",
+          "members": [
+            "mod"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__settings (key, value) VALUES ('moderator_group_id', ?)",
+          "params": [
+            "{{group:social}}"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__listings (id, title, description, price_cents, category, pickup_details, status, seller_id, seller_name, created_at, updated_at) VALUES (?, ?, ?, 4500, 'furniture', ?, 'active', ?, ?, datetime('now'), datetime('now'))",
+          "params": [
+            "ui-listing",
+            "Cedar picnic table",
+            "Seats six, some weathering on the top.",
+            "Pickup from the side gate.",
+            "{{seller}}",
+            "Sam Seller"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__flags (id, listing_id, reporter_id, reporter_name, reason, status, created_at) VALUES (?, 'ui-listing', ?, ?, ?, 'open', datetime('now'))",
+          "params": [
+            "ui-flag",
+            "{{reporter}}",
+            "Robin Reporter",
+            "Broken leg, unsafe to sit on."
+          ]
+        },
+        {
+          "action": "open",
+          "as": "mod"
+        },
+        {
+          "action": "expectVisible",
+          "as": "mod",
+          "selector": "[data-testid=\"listing-card\"][data-listing-id=\"ui-listing\"]"
+        },
+        {
+          "action": "expectCount",
+          "as": "mod",
+          "selector": "[data-testid=\"tab\"][data-tab-id=\"flagged\"]",
+          "count": 0
+        },
+        {
+          "action": "expectCount",
+          "as": "mod",
+          "selector": "[data-testid=\"tab\"]",
+          "count": 3
+        },
+        {
+          "action": "seedRaw",
+          "sql": "UPDATE app_marketplace__settings SET value = ? WHERE key = 'moderator_group_id'",
+          "params": [
+            "{{group:lead}}"
+          ]
+        },
+        {
+          "action": "reload",
+          "as": "mod"
+        },
+        {
+          "action": "expectVisible",
+          "as": "mod",
+          "selector": "[data-testid=\"listing-card\"][data-listing-id=\"ui-listing\"]"
+        },
+        {
+          "action": "expectCount",
+          "as": "mod",
+          "selector": "[data-testid=\"tab\"][data-tab-id=\"flagged\"]",
+          "count": 1
+        },
+        {
+          "action": "click",
+          "as": "mod",
+          "selector": "[data-testid=\"tab\"][data-tab-id=\"flagged\"]"
+        },
+        {
+          "action": "expectVisible",
+          "as": "mod",
+          "selector": "[data-testid=\"flag-card\"][data-flag-id=\"ui-flag\"]"
+        },
+        {
+          "action": "expectText",
+          "as": "mod",
+          "text": "Broken leg, unsafe to sit on.",
+          "selector": "[data-testid=\"flag-card\"][data-flag-id=\"ui-flag\"]"
+        }
+      ]
+    },
+    {
+      "name": "the leadership removal control on another member's listing follows the configured moderator group",
+      "members": {
+        "mod": "adult",
+        "seller": "adult"
+      },
+      "steps": [
+        {
+          "action": "seedGroup",
+          "group": "social",
+          "name": "Social Committee",
+          "members": [
+            "seller"
+          ]
+        },
+        {
+          "action": "seedGroup",
+          "group": "lead",
+          "name": "Leadership",
+          "members": [
+            "mod"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__settings (key, value) VALUES ('moderator_group_id', ?)",
+          "params": [
+            "{{group:social}}"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__listings (id, title, description, price_cents, category, pickup_details, status, seller_id, seller_name, created_at, updated_at) VALUES (?, ?, ?, 4500, 'furniture', ?, 'active', ?, ?, datetime('now'), datetime('now'))",
+          "params": [
+            "ui-listing",
+            "Cedar picnic table",
+            "Seats six, some weathering on the top.",
+            "Pickup from the side gate.",
+            "{{seller}}",
+            "Sam Seller"
+          ]
+        },
+        {
+          "action": "open",
+          "as": "mod"
+        },
+        {
+          "action": "expectVisible",
+          "as": "mod",
+          "selector": "[data-testid=\"listing-card\"][data-listing-id=\"ui-listing\"]"
+        },
+        {
+          "action": "click",
+          "as": "mod",
+          "selector": "[data-testid=\"listing-card\"][data-listing-id=\"ui-listing\"]"
+        },
+        {
+          "action": "expectVisible",
+          "as": "mod",
+          "selector": "[data-testid=\"listing-detail\"][data-listing-status=\"active\"]"
+        },
+        {
+          "action": "expectVisible",
+          "as": "mod",
+          "selector": "[data-testid=\"report-listing\"]"
+        },
+        {
+          "action": "expectCount",
+          "as": "mod",
+          "selector": "[data-testid=\"moderate-remove\"]",
+          "count": 0
+        },
+        {
+          "action": "seedRaw",
+          "sql": "UPDATE app_marketplace__settings SET value = ? WHERE key = 'moderator_group_id'",
+          "params": [
+            "{{group:lead}}"
+          ]
+        },
+        {
+          "action": "reload",
+          "as": "mod"
+        },
+        {
+          "action": "expectVisible",
+          "as": "mod",
+          "selector": "[data-testid=\"listing-card\"][data-listing-id=\"ui-listing\"]"
+        },
+        {
+          "action": "click",
+          "as": "mod",
+          "selector": "[data-testid=\"listing-card\"][data-listing-id=\"ui-listing\"]"
+        },
+        {
+          "action": "expectVisible",
+          "as": "mod",
+          "selector": "[data-testid=\"listing-detail\"][data-listing-status=\"active\"]"
+        },
+        {
+          "action": "expectVisible",
+          "as": "mod",
+          "selector": "[data-testid=\"moderate-remove\"]"
+        }
+      ]
+    }
+  ]
+}

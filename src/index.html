@@ -946,7 +946,7 @@ function renderTabs() {
   const activeTop = view === "listing" ? "browse" : (view === "inquiry" ? "inquiries" : view);
 
   return `<div class="tabs">${tabs.map(t => `
-    <button class="tab ${t.id === activeTop ? "active" : ""}" onclick="goTo('${t.id}')">
+    <button class="tab ${t.id === activeTop ? "active" : ""}" data-testid="tab" data-tab-id="${esc(t.id)}" onclick="goTo('${t.id}')">
       ${esc(t.label)}
       ${t.count ? `<span class="count">${t.count}</span>` : ""}
     </button>`).join("")}</div>`;
@@ -973,7 +973,7 @@ function renderBrowse() {
   </div>`;
 
   const grid = filtered.length ? `<div class="listing-grid">${filtered.map(l => `
-    <div class="listing-card" data-action="open-listing" data-id="${esc(l.id)}">
+    <div class="listing-card" data-testid="listing-card" data-listing-id="${esc(l.id)}" data-action="open-listing" data-id="${esc(l.id)}">
       ${listingPhotoThumb(l)}
       <div class="listing-card-body">
         <div class="listing-price ${l.price_cents == null || l.price_cents === 0 ? "free" : ""}">${esc(formatPrice(l.price_cents))}</div>
@@ -1013,13 +1013,13 @@ function renderListingDetail() {
     `;
   } else {
     if (canMessageSeller(l, ME)) actions += `<button class="btn btn-primary btn-sm" data-action="start-inquiry" data-id="${esc(l.id)}">💬 Ask a question</button>`;
-    if (ME && l.status !== "removed") actions += `<button class="btn btn-ghost btn-sm" data-action="open-report" data-id="${esc(l.id)}">🚩 Report</button>`;
-    if (canModerateMe() && l.status !== "removed") actions += `<button class="btn btn-danger btn-sm" data-action="remove-listing" data-id="${esc(l.id)}">Remove (leadership)</button>`;
+    if (ME && l.status !== "removed") actions += `<button class="btn btn-ghost btn-sm" data-testid="report-listing" data-action="open-report" data-id="${esc(l.id)}">🚩 Report</button>`;
+    if (canModerateMe() && l.status !== "removed") actions += `<button class="btn btn-danger btn-sm" data-testid="moderate-remove" data-action="remove-listing" data-id="${esc(l.id)}">Remove (leadership)</button>`;
   }
 
   return `
     <button class="back-btn" onclick="goTo('browse')">← Back to browse</button>
-    <div class="detail-grid">
+    <div class="detail-grid" data-testid="listing-detail" data-listing-id="${esc(l.id)}" data-listing-status="${esc(l.status)}">
       <div>
         <div class="photo-carousel">${mainPhoto}${thumbs}</div>
       </div>
@@ -1231,7 +1231,7 @@ function renderFlagged() {
   const cards = queue.map(f => {
     const listing = listings.find(l => l.id === f.listing_id);
     return `
-      <div class="card flag-card">
+      <div class="card flag-card" data-testid="flag-card" data-flag-id="${esc(f.id)}">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
           <div>
             <div style="font-weight:700;">${esc(listing?.title ?? "Listing no longer available")}</div>
