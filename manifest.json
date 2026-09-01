@@ -12,7 +12,7 @@
   "storage": "db",
   "preload": {
     "settings": {"sql": "SELECT key, value FROM app_marketplace__settings WHERE key = 'moderator_group_id'"},
-    "moderations": {"sql": "SELECT listing_id, status, reason, moderated_by, moderated_at FROM app_marketplace__moderations"},
+    "moderations": {"sql": "SELECT m.listing_id, m.status, m.reason, m.moderated_by, m.moderated_at FROM app_marketplace__moderations m JOIN app_marketplace__listings l ON l.id = m.listing_id ORDER BY l.created_at DESC LIMIT 500"},
     "listings": {"sql": "SELECT id, title, description, price_cents, category, pickup_details, status, seller_id, seller_name, created_at, updated_at FROM app_marketplace__listings ORDER BY created_at DESC LIMIT 500"},
     "flags": {"sql": "SELECT id, listing_id, reporter_id, reporter_name, reason, status, created_at, resolved_by, resolved_at FROM app_marketplace__flags WHERE status = 'open' ORDER BY created_at ASC"}
   },

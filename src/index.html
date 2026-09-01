@@ -400,7 +400,14 @@ async function loadSettings() {
 // (or delete) a row in app_marketplace__moderations.
 async function loadModerations() {
   if (!DB) { moderations = new Map(); return; }
-  const { rows } = await db(`SELECT listing_id, status, reason, moderated_by, moderated_at FROM app_marketplace__moderations`);
+  // Scoped to the same 500 listings the browse read loads: a moderation whose
+  // listing is past that window can never be consulted, because applyModerations
+  // only probes ids already in `listings`. A JOIN, not IN (SELECT …) — the
+  // rewriter fails closed on a governed table named only inside a subquery, and
+  // `listings` is owner_or_visibility. Both tables are top-level here, so both
+  // policies still apply. If listings ever gains a second page or a search, this
+  // read has to widen in lockstep or a removed listing renders as active.
+  const { rows } = await db(`SELECT m.listing_id, m.status, m.reason, m.moderated_by, m.moderated_at FROM app_marketplace__moderations m JOIN app_marketplace__listings l ON l.id = m.listing_id ORDER BY l.created_at DESC LIMIT 500`);
   moderations = new Map((rows ?? []).map(m => [m.listing_id, m]));
 }
 
