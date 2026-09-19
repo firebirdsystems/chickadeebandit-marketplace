@@ -670,12 +670,15 @@ async function fileFlag(listing, reason) {
 // A moderator removal is recorded in the moderator-only `moderations` table
 // (insert_privileged_only). It is NOT written to listings.status — the seller owns
 // that column and could flip it back. Effective "removed" is derived from this table.
-function moderationStatement(listingId, reason, now) {
-  return {
-    sql: `INSERT OR REPLACE INTO app_marketplace__moderations (listing_id, status, reason, moderated_by, moderated_at)
-          VALUES (?, 'removed', ?, ?, ?)`,
-    params: [listingId, reason, ME.id, now],
-  };
+function moderationStatements(listingId, reason, now) {
+  return [
+    { sql: `DELETE FROM app_marketplace__moderations WHERE listing_id = ?`, params: [listingId] },
+    {
+      sql: `INSERT INTO app_marketplace__moderations (listing_id, status, reason, moderated_by, moderated_at)
+            VALUES (?, 'removed', ?, ?, ?)`,
+      params: [listingId, reason, ME.id, now],
+    },
+  ];
 }
 
 function applyModerationLocally(listingId, reason, now) {
@@ -687,8 +690,7 @@ function applyModerationLocally(listingId, reason, now) {
 
 async function removeListingAsModerator(listingId, reason = "") {
   const now = new Date().toISOString();
-  const stmt = moderationStatement(listingId, reason, now);
-  await db(stmt.sql, stmt.params);
+  await dbBatch(moderationStatements(listingId, reason, now));
   applyModerationLocally(listingId, reason, now);
 }
 
@@ -705,7 +707,7 @@ async function resolveFlag(flag, action) {
   // on the moderation insert left the report closed and the listing still live,
   // with the report gone from the queue so nobody would look at it again.
   if (action === "remove") {
-    await dbBatch([closeFlag, moderationStatement(flag.listing_id, "", now)]);
+    await dbBatch([closeFlag, ...moderationStatements(flag.listing_id, "", now)]);
     applyModerationLocally(flag.listing_id, "", now);
   } else {
     await db(closeFlag.sql, closeFlag.params);
