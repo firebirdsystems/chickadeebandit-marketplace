@@ -10,7 +10,9 @@ CREATE TABLE IF NOT EXISTS app_marketplace__settings (
 ALTER TABLE app_marketplace__inquiry_messages ADD COLUMN buyer_id  TEXT NOT NULL DEFAULT '';
 ALTER TABLE app_marketplace__inquiry_messages ADD COLUMN seller_id TEXT NOT NULL DEFAULT '';
 
--- Back-fill existing message rows from their parent inquiry.
+-- Back-fill existing message rows from their parent inquiry. COALESCE to the
+-- column's own '' default: a message whose inquiry is gone would otherwise make
+-- the subquery NULL, fail NOT NULL, and abort this update for the household.
 UPDATE app_marketplace__inquiry_messages
-   SET buyer_id  = (SELECT i.buyer_id  FROM app_marketplace__inquiries i WHERE i.id = app_marketplace__inquiry_messages.inquiry_id),
-       seller_id = (SELECT i.seller_id FROM app_marketplace__inquiries i WHERE i.id = app_marketplace__inquiry_messages.inquiry_id);
+   SET buyer_id  = COALESCE((SELECT i.buyer_id  FROM app_marketplace__inquiries i WHERE i.id = app_marketplace__inquiry_messages.inquiry_id), ''),
+       seller_id = COALESCE((SELECT i.seller_id FROM app_marketplace__inquiries i WHERE i.id = app_marketplace__inquiry_messages.inquiry_id), '');
