@@ -377,6 +377,283 @@
           "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "l1", "status": "flagged" }] }
         }
       ]
+    },
+    {
+      "name": "in a space a buyer's conversation with a seller is readable only by the two of them, not by the steward, a moderator or a neighbour, and no third party can post into it, edit it or erase it",
+      "context": "shared_space",
+      "members": { "steward": "admin", "seller": "adult", "buyer": "adult", "mod": "adult", "neighbour": "adult" },
+      "steps": [
+        { "action": "seedGroup", "group": "mods", "name": "Moderators", "members": ["mod"] },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__settings (key, value) VALUES ('moderator_group_id', ?)",
+          "params": ["{{group:mods}}"]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__listings (id, title, status, seller_id, seller_name, created_at, updated_at) VALUES ('l1', 'Couch', 'active', ?, 'Seller', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+          "params": ["{{seller}}"]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__inquiries (id, listing_id, buyer_id, buyer_name, seller_id, created_at) VALUES ('inq1', 'l1', ?, 'Buyer', ?, '2026-01-02T00:00:00Z')",
+          "params": ["{{buyer}}", "{{seller}}"]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__inquiry_messages (id, inquiry_id, sender_id, sender_name, body, created_at, buyer_id, seller_id) VALUES ('m1', 'inq1', ?, 'Buyer', ?, '2026-01-02T00:00:00Z', ?, ?), ('m2', 'inq1', ?, 'Seller', ?, '2026-01-02T01:00:00Z', ?, ?)",
+          "params": [
+            "{{buyer}}",
+            "Would you take $40? I can pick up at 5.",
+            "{{buyer}}",
+            "{{seller}}",
+            "{{seller}}",
+            "Deal, my address is 12 Elm.",
+            "{{buyer}}",
+            "{{seller}}"
+          ]
+        },
+        {
+          "action": "db",
+          "as": "buyer",
+          "sql": "SELECT id, sender_id, body FROM app_marketplace__inquiry_messages WHERE inquiry_id = ?",
+          "params": ["inq1"],
+          "expect": {
+            "status": 200,
+            "rowCount": 2,
+            "rowsContain": [{ "id": "m2", "sender_id": "scn-seller", "body": "Deal, my address is 12 Elm." }]
+          }
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "SELECT id, sender_id, body FROM app_marketplace__inquiry_messages WHERE inquiry_id = ?",
+          "params": ["inq1"],
+          "expect": {
+            "status": 200,
+            "rowCount": 2,
+            "rowsContain": [{ "id": "m1", "sender_id": "scn-buyer", "body": "Would you take $40? I can pick up at 5." }]
+          }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "SELECT id FROM app_marketplace__inquiry_messages",
+          "expect": { "status": 200, "rowCount": 0 }
+        },
+        {
+          "action": "db",
+          "as": "mod",
+          "sql": "SELECT id FROM app_marketplace__inquiry_messages",
+          "expect": { "status": 200, "rowCount": 0 }
+        },
+        {
+          "action": "db",
+          "as": "neighbour",
+          "sql": "SELECT id FROM app_marketplace__inquiry_messages",
+          "expect": { "status": 200, "rowCount": 0 }
+        },
+        {
+          "action": "db",
+          "as": "neighbour",
+          "sql": "INSERT INTO app_marketplace__inquiry_messages (id, inquiry_id, sender_id, sender_name, body, created_at, buyer_id, seller_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "params": [
+            "m3",
+            "inq1",
+            "{{neighbour}}",
+            "Neighbour",
+            "I'll pay $50",
+            "2026-01-02T02:00:00Z",
+            "{{buyer}}",
+            "{{seller}}"
+          ],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "UPDATE app_marketplace__inquiry_messages SET body = 'redacted' WHERE id = ?",
+          "params": ["m1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "mod",
+          "sql": "DELETE FROM app_marketplace__inquiry_messages WHERE inquiry_id = ?",
+          "params": ["inq1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "buyer",
+          "sql": "SELECT id, body FROM app_marketplace__inquiry_messages WHERE inquiry_id = ?",
+          "params": ["inq1"],
+          "expect": {
+            "status": 200,
+            "rowCount": 2,
+            "rowsContain": [{ "id": "m1", "body": "Would you take $40? I can pick up at 5." }]
+          }
+        }
+      ]
+    },
+    {
+      "name": "a party to a conversation cannot put words in the other party's mouth: a message the buyer sends is stamped as the buyer's whatever sender it names",
+      "members": { "seller": "adult", "buyer": "adult" },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__listings (id, title, status, seller_id, seller_name, created_at, updated_at) VALUES ('l1', 'Couch', 'active', ?, 'Seller', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+          "params": ["{{seller}}"]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__inquiries (id, listing_id, buyer_id, buyer_name, seller_id, created_at) VALUES ('inq1', 'l1', ?, 'Buyer', ?, '2026-01-02T00:00:00Z')",
+          "params": ["{{buyer}}", "{{seller}}"]
+        },
+        {
+          "action": "db",
+          "as": "buyer",
+          "sql": "INSERT INTO app_marketplace__inquiry_messages (id, inquiry_id, sender_id, sender_name, body, created_at, buyer_id, seller_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "params": [
+            "m1",
+            "inq1",
+            "{{seller}}",
+            "Seller",
+            "Sure, free to you",
+            "2026-01-02T00:00:00Z",
+            "{{buyer}}",
+            "{{seller}}"
+          ],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "SELECT id, sender_id FROM app_marketplace__inquiry_messages",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "m1", "sender_id": "scn-buyer" }] }
+        }
+      ]
+    },
+    {
+      "name": "in a space only the seller can attach or remove photos on a listing; the steward and other neighbours see them but cannot add or delete one",
+      "context": "shared_space",
+      "members": { "steward": "admin", "seller": "adult", "neighbour": "adult" },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__listings (id, title, status, seller_id, seller_name, created_at, updated_at) VALUES ('l1', 'Couch', 'active', ?, 'Seller', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+          "params": ["{{seller}}"]
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": ["ph1", "l1", "file-1", 0, "2026-01-01T00:00:00Z", "{{seller}}"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "neighbour",
+          "sql": "INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": ["ph2", "l1", "file-2", 1, "2026-01-01T00:00:00Z", "{{neighbour}}"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": ["ph3", "l1", "file-3", 2, "2026-01-01T00:00:00Z", "{{steward}}"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "neighbour",
+          "sql": "DELETE FROM app_marketplace__listing_photos WHERE listing_id = ?",
+          "params": ["l1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "neighbour",
+          "sql": "SELECT id, file_id, uploaded_by FROM app_marketplace__listing_photos WHERE listing_id = ?",
+          "params": ["l1"],
+          "expect": {
+            "status": 200,
+            "rowCount": 1,
+            "rowsContain": [{ "id": "ph1", "file_id": "file-1", "uploaded_by": "scn-seller" }]
+          }
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "DELETE FROM app_marketplace__listing_photos WHERE id = ?",
+          "params": ["ph1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "SELECT id FROM app_marketplace__listing_photos WHERE listing_id = ?",
+          "params": ["l1"],
+          "expect": { "status": 200, "rowCount": 0 }
+        }
+      ]
+    },
+    {
+      "name": "the activity log that records who asked about or reported a listing is private to the member who did it, even from other adults; a child's entry is stamped as the child and cannot be rewritten",
+      "members": { "reporter": "adult", "parent": "adult", "kid": "child" },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__activity (id, record_id, actor_id, action, detail, created_at) VALUES ('a1', 'l1', ?, 'flagged', 'Reporter reported \"Couch\"', '2026-01-01T00:00:00Z'), ('a2', 'inq1', ?, 'message', 'Kid sent a message about \"Bike\"', '2026-01-01T00:00:00Z')",
+          "params": ["{{reporter}}", "{{kid}}"]
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "SELECT id FROM app_marketplace__activity",
+          "expect": { "status": 200, "rowCount": 0 }
+        },
+        {
+          "action": "db",
+          "as": "reporter",
+          "sql": "SELECT id, actor_id FROM app_marketplace__activity",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "a1", "actor_id": "scn-reporter" }] }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "INSERT INTO app_marketplace__activity (id, record_id, actor_id, action, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": ["a3", "l1", "{{reporter}}", "flagged", "forged", "2026-01-02T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "UPDATE app_marketplace__activity SET detail = 'nothing happened' WHERE id = ?",
+          "params": ["a2"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "SELECT id, actor_id, detail FROM app_marketplace__activity",
+          "expect": {
+            "status": 200,
+            "rowCount": 2,
+            "rowsContain": [
+              { "id": "a2", "detail": "Kid sent a message about \"Bike\"" },
+              { "id": "a3", "actor_id": "scn-kid" }
+            ]
+          }
+        },
+        {
+          "action": "db",
+          "as": "reporter",
+          "sql": "SELECT id FROM app_marketplace__activity",
+          "expect": { "status": 200, "rowCount": 1 }
+        }
+      ]
     }
   ]
 }
