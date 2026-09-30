@@ -150,16 +150,231 @@
         {
           "action": "db",
           "as": "outsider",
-          "sql": "INSERT INTO app_marketplace__moderations (id, listing_id, moderated_by, action, reason, created_at) VALUES (?, ?, ?, 'remove', '', ?)",
+          "sql": "INSERT INTO app_marketplace__moderations (listing_id, status, reason, moderated_by, moderated_at) VALUES (?, 'removed', '', ?, ?)",
           "params": [
-            "mod1",
             "l1",
             "{{outsider}}",
             "2026-01-03T00:00:00Z"
           ],
           "expect": {
-            "status": 403
+            "status": 403,
+            "errorIncludes": "privileged"
           }
+        }
+      ]
+    },
+    {
+      "name": "a child lists an item as themselves but cannot edit or remove an adult's listing",
+      "members": { "kid": "child", "parent": "adult" },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__listings (id, title, status, seller_id, seller_name, created_at, updated_at) VALUES (?, ?, 'active', ?, ?, ?, ?)",
+          "params": ["lp", "Couch", "{{parent}}", "Parent", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"]
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "INSERT INTO app_marketplace__listings (id, title, status, seller_id, seller_name, created_at, updated_at) VALUES (?, ?, 'active', ?, ?, ?, ?)",
+          "params": ["lk", "Old bike", "{{kid}}", "Kid", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "SELECT id, seller_id FROM app_marketplace__listings WHERE id = 'lk'",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "seller_id": "scn-kid" }] }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "UPDATE app_marketplace__listings SET title = 'tampered' WHERE id = 'lp'",
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "DELETE FROM app_marketplace__listings WHERE id = 'lp'",
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "SELECT id, title FROM app_marketplace__listings WHERE id = 'lp'",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "title": "Couch" }] }
+        }
+      ]
+    },
+    {
+      "name": "a child cannot see other members' inquiries or flags, and cannot moderate",
+      "members": { "kid": "child", "seller": "adult", "buyer": "adult" },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__listings (id, title, status, seller_id, seller_name, created_at, updated_at) VALUES (?, ?, 'active', ?, ?, ?, ?)",
+          "params": ["l1", "Couch", "{{seller}}", "Seller", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__inquiries (id, listing_id, buyer_id, buyer_name, seller_id, created_at) VALUES ('inq1', 'l1', ?, 'Buyer', ?, ?)",
+          "params": ["{{buyer}}", "{{seller}}", "2026-01-01T00:00:00Z"]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__flags (id, listing_id, reporter_id, reporter_name, reason, status, created_at) VALUES ('f1', 'l1', ?, 'Buyer', 'spam', 'open', ?)",
+          "params": ["{{buyer}}", "2026-01-01T00:00:00Z"]
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "SELECT id FROM app_marketplace__inquiries",
+          "expect": { "status": 200, "rowCount": 0 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "SELECT id FROM app_marketplace__flags",
+          "expect": { "status": 200, "rowCount": 0 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "INSERT INTO app_marketplace__moderations (listing_id, status, reason, moderated_by, moderated_at) VALUES ('l1', 'removed', '', ?, ?)",
+          "params": ["{{kid}}", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "INSERT INTO app_marketplace__inquiries (id, listing_id, buyer_id, buyer_name, seller_id, created_at) VALUES ('inq2', 'l1', ?, 'Kid', ?, ?)",
+          "params": ["{{kid}}", "{{seller}}", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "SELECT id, buyer_id FROM app_marketplace__inquiries",
+          "expect": { "status": 200, "rowCount": 2, "rowsContain": [{ "id": "inq2", "buyer_id": "scn-kid" }] }
+        },
+        {
+          "action": "db",
+          "as": "buyer",
+          "sql": "SELECT id FROM app_marketplace__inquiries",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "inq1" }] }
+        }
+      ]
+    },
+    {
+      "name": "a moderator-group adult sees and resolves every flag and records a moderation; a plain adult outside the group sees only their own flag and can do neither",
+      "members": { "mod": "adult", "seller": "adult", "reporter": "adult", "other": "adult" },
+      "steps": [
+        { "action": "seedGroup", "group": "mods", "name": "Moderators", "members": ["mod"] },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__settings (key, value) VALUES ('moderator_group_id', ?)",
+          "params": ["{{group:mods}}"]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__listings (id, title, status, seller_id, seller_name, created_at, updated_at) VALUES ('l1', 'Couch', 'active', ?, 'Seller', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+          "params": ["{{seller}}"]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__flags (id, listing_id, reporter_id, reporter_name, reason, status, created_at) VALUES ('f1', 'l1', ?, 'Reporter', 'spam', 'open', '2026-01-02T00:00:00Z'), ('f2', 'l1', ?, 'Other', 'scam', 'open', '2026-01-02T00:00:00Z')",
+          "params": ["{{reporter}}", "{{other}}"]
+        },
+        {
+          "action": "db",
+          "as": "other",
+          "sql": "SELECT id FROM app_marketplace__flags",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "f2" }] }
+        },
+        {
+          "action": "db",
+          "as": "other",
+          "sql": "UPDATE app_marketplace__flags SET status = 'dismissed' WHERE id = 'f1'",
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "other",
+          "sql": "INSERT INTO app_marketplace__moderations (listing_id, status, reason, moderated_by, moderated_at) VALUES ('l1', 'removed', 'nope', ?, '2026-01-03T00:00:00Z')",
+          "params": ["{{other}}"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "mod",
+          "sql": "SELECT id FROM app_marketplace__flags ORDER BY id",
+          "expect": { "status": 200, "rowCount": 2, "rowsContain": [{ "id": "f1" }, { "id": "f2" }] }
+        },
+        {
+          "action": "db",
+          "as": "mod",
+          "sql": "UPDATE app_marketplace__flags SET status = 'actioned', resolved_by = ?, resolved_at = '2026-01-03T00:00:00Z' WHERE id = 'f1'",
+          "params": ["{{mod}}"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "mod",
+          "sql": "INSERT INTO app_marketplace__moderations (listing_id, status, reason, moderated_by, moderated_at) VALUES ('l1', 'removed', 'spam', ?, '2026-01-03T00:00:00Z')",
+          "params": ["{{mod}}"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "reporter",
+          "sql": "SELECT id, status FROM app_marketplace__flags",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "f1", "status": "actioned" }] }
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "SELECT listing_id, moderated_by FROM app_marketplace__moderations",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "listing_id": "l1", "moderated_by": "scn-mod" }] }
+        }
+      ]
+    },
+    {
+      "name": "a moderator-group adult can flag another seller's active listing; a plain adult outside the group changes nothing",
+      "members": { "mod": "adult", "seller": "adult", "other": "adult" },
+      "steps": [
+        { "action": "seedGroup", "group": "mods", "name": "Moderators", "members": ["mod"] },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__settings (key, value) VALUES ('moderator_group_id', ?)",
+          "params": ["{{group:mods}}"]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__listings (id, title, status, seller_id, seller_name, created_at, updated_at) VALUES ('l1', 'Couch', 'active', ?, 'Seller', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+          "params": ["{{seller}}"]
+        },
+        {
+          "action": "db",
+          "as": "other",
+          "sql": "UPDATE app_marketplace__listings SET status = 'flagged' WHERE id = 'l1'",
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "SELECT id, status FROM app_marketplace__listings",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "l1", "status": "active" }] }
+        },
+        {
+          "action": "db",
+          "as": "mod",
+          "sql": "UPDATE app_marketplace__listings SET status = 'flagged' WHERE id = 'l1'",
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "SELECT id, status FROM app_marketplace__listings",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "l1", "status": "flagged" }] }
         }
       ]
     }

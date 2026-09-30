@@ -67,5 +67,23 @@ node "$ROOT/build.mjs"
 echo ""
 echo "▶ Tests…"
 npm test --prefix "$ROOT"
+
+# ── Hub runtime exercise ─────────────────────────────────────────────────────
+# App release CI only runs the static contract suite; the hub's runtime lanes
+# (scenarios.json, surfaces, automations, member removal, upgrades) otherwise
+# run only in the hub repo's CI, so a broken scenario surfaces on the next hub
+# PR. Run them here against this working tree when a hub checkout sits beside
+# the apps folder. CB_APPS_DIR must be the WHOLE apps folder: the cross-app
+# suites resolve emitters and targets from the sibling apps.
+HUB="$ROOT/../../chickadeebandit/packages/hub"
+if [ -d "$HUB/node_modules" ]; then
+  echo ""
+  echo "▶ Hub runtime exercise…"
+  (cd "$HUB" && CB_APPS_DIR="$(cd "$ROOT/.." && pwd)" CB_ONLY_APP="$(basename "$ROOT")" \
+     npx vitest run __tests__/app-exercise)
+else
+  echo ""
+  echo "⚠ hub checkout not found at $HUB — skipping runtime exercise"
+fi
 echo ""
 echo "✓ Preflight passed"
