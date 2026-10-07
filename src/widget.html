@@ -36,7 +36,7 @@
       color: #9ca3af;
       text-align: center;
     }
-    .empty .icon { font-size: 1.8rem; }
+    .empty .icon { display: block; margin-bottom: 6px; }
     .empty p { font-size: 12px; }
 
     .listing-row {
@@ -74,21 +74,26 @@
 <body>
 
 <div class="header">
-  <span class="header-icon">🛍️</span>
+  <span class="header-icon"></span>
   <span class="header-title">Marketplace</span>
   <a class="header-link" href="/run/marketplace">Open</a>
 </div>
 
 <div class="content" id="content">
   <div class="empty">
-    <span class="icon">🛍️</span>
+    <span class="icon"></span>
     <p>No listings yet</p>
   </div>
 </div>
 
 <script type="module">
-import { esc, createFilesHelper } from "/hub-sdk.js";
-import { categoryIcon, formatPrice } from "./logic.js";
+import { esc, createFilesHelper, glyph, chickadee } from "/hub-sdk.js";
+import { categoryGlyph, categoryLabel, formatPrice } from "./logic.js";
+
+// The header mark and the resting empty state are static markup, drawn here
+// because the glyphs come from the SDK.
+document.querySelector(".header-icon").innerHTML = glyph("shop-bag");
+document.querySelector(".empty .icon").innerHTML = chickadee("nest", { size: 56 });
 
 const DB        = window.__DB_URL       ?? "";
 const FILES_URL = window.__FILES_URL    ?? "";
@@ -138,13 +143,13 @@ async function init() {
     const photo = photoByListing.get(l.id);
     const thumb = photo
       ? `<img class="listing-thumb" src="${files.url(photo)}" alt="" loading="lazy" />`
-      : `<div class="listing-thumb-placeholder">${categoryIcon(l.category)}</div>`;
+      : `<div class="listing-thumb-placeholder">${glyph(categoryGlyph(l.category))}</div>`;
     return `
       <div class="listing-row">
         ${thumb}
         <div class="listing-info">
           <div class="listing-title">${esc(l.title)}</div>
-          <div class="listing-meta">${esc(categoryIcon(l.category))}</div>
+          <div class="listing-meta">${glyph(categoryGlyph(l.category))} ${esc(categoryLabel(l.category))}</div>
         </div>
         <span class="listing-price">${esc(formatPrice(l.price_cents))}</span>
       </div>

@@ -4,25 +4,26 @@ export { AVATAR_COLORS, memberColor, initial, esc, isAdult, formatRelativeDate, 
 
 // ── Categories ─────────────────────────────────────────────────────────────────
 export const CATEGORIES = [
-  { id: "furniture",   label: "Furniture",   icon: "🛋️" },
-  { id: "electronics", label: "Electronics", icon: "🔌" },
-  { id: "kids",        label: "Kids & Baby", icon: "🧸" },
-  { id: "household",   label: "Household",   icon: "🏠" },
-  { id: "clothing",    label: "Clothing",    icon: "👕" },
-  { id: "outdoor",     label: "Outdoor",     icon: "🌿" },
-  { id: "free",        label: "Free",        icon: "🎁" },
-  { id: "other",       label: "Other",       icon: "📦" },
+  { id: "furniture",   label: "Furniture",   glyph: "sofa" },
+  { id: "electronics", label: "Electronics", glyph: "plug" },
+  { id: "kids",        label: "Kids & Baby", glyph: "stroller" },
+  { id: "household",   label: "Household",   glyph: "house" },
+  { id: "clothing",    label: "Clothing",    glyph: "shirt" },
+  { id: "outdoor",     label: "Outdoor",     glyph: "sprout" },
+  { id: "free",        label: "Free",        glyph: "gift" },
+  { id: "other",       label: "Other",       glyph: "box" },
 ];
 
 const CATEGORY_LABELS = Object.fromEntries(CATEGORIES.map(c => [c.id, c.label]));
-const CATEGORY_ICONS  = Object.fromEntries(CATEGORIES.map(c => [c.id, c.icon]));
+const CATEGORY_GLYPHS = Object.fromEntries(CATEGORIES.map(c => [c.id, c.glyph]));
 
 export function categoryLabel(category) {
   return CATEGORY_LABELS[category] ?? "Other";
 }
 
-export function categoryIcon(category) {
-  return CATEGORY_ICONS[category] ?? "📦";
+/** The name of the hub glyph that marks a category — drawn with the SDK's glyph(). */
+export function categoryGlyph(category) {
+  return CATEGORY_GLYPHS[category] ?? "box";
 }
 
 // ── Price formatting ───────────────────────────────────────────────────────────

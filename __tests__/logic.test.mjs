@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  categoryLabel, categoryIcon, formatPrice, statusLabel,
+  categoryLabel, categoryGlyph, formatPrice, statusLabel,
   isOwnListing, canEditListing, canMessageSeller, canModerate, moderatorGroup,
   filterListings, sortListings, inquiriesForMember, sortInquiries,
   openFlags, sortFlags, searchableFields,
@@ -40,13 +40,16 @@ function listing(overrides = {}) {
   };
 }
 
-describe("categoryLabel / categoryIcon", () => {
+describe("categoryLabel / categoryGlyph", () => {
   it("returns the label for a known category", () => {
     expect(categoryLabel("furniture")).toBe("Furniture");
   });
   it("falls back to Other for unknown categories", () => {
     expect(categoryLabel("bogus")).toBe("Other");
-    expect(categoryIcon("bogus")).toBe("📦");
+    expect(categoryGlyph("bogus")).toBe("box");
+  });
+  it("names a glyph for a known category", () => {
+    expect(categoryGlyph("furniture")).toBe("sofa");
   });
 });
 

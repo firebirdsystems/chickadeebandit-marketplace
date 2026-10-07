@@ -127,7 +127,7 @@
     .empty-state {
       text-align: center; padding: 48px 20px; color: var(--muted);
     }
-    .empty-state .icon { font-size: 2.4rem; margin-bottom: 8px; }
+    .empty-state .icon { margin-bottom: 12px; }
     .empty-state p { font-size: 0.9rem; margin-bottom: 14px; }
 
     /* ── Badges ── */
@@ -265,7 +265,7 @@
 <body>
 <div id="app" class="app">
   <div class="page-header">
-    <h1>🛍️ Marketplace</h1>
+    <h1><span id="page-glyph"></span> Marketplace</h1>
     <div class="header-actions" id="header-actions"></div>
   </div>
   <div id="content"></div>
@@ -274,14 +274,17 @@
 <script type="module">
 import {
   esc, initial, memberColor, isAdult, hubConfirm, formatRelativeDate,
-  createFilesHelper, searchMatch,
+  createFilesHelper, searchMatch, glyph, chickadee,
 } from "/hub-sdk.js";
 import {
-  CATEGORIES, categoryLabel, categoryIcon, formatPrice, statusLabel,
+  CATEGORIES, categoryLabel, categoryGlyph, formatPrice, statusLabel,
   isOwnListing, canEditListing, canMessageSeller, canModerate, moderatorGroup,
   filterListings, sortListings, inquiriesForMember, sortInquiries,
   openFlags, sortFlags, searchableFields,
 } from "./logic.js";
+
+// The page heading is static markup; its mark comes from the SDK.
+document.getElementById("page-glyph").innerHTML = glyph("shop-bag");
 
 const CONTEXT          = window.__CONTEXT_URL      ?? "";
 const DB               = window.__DB_URL           ?? "";
@@ -735,7 +738,7 @@ let pendingPhotoFiles = [];
 
 function categoryOptions(selected) {
   return CATEGORIES.map(c =>
-    `<option value="${c.id}" ${c.id === selected ? "selected" : ""}>${c.icon} ${esc(c.label)}</option>`
+    `<option value="${c.id}" ${c.id === selected ? "selected" : ""}>${esc(c.label)}</option>`
   ).join("");
 }
 
@@ -744,7 +747,7 @@ function renderUploadGrid() {
   return `<div class="upload-grid">${pendingPhotoFiles.map((f, i) => `
     <div class="upload-thumb">
       <img src="${URL.createObjectURL(f)}" alt="" />
-      <button type="button" class="remove-photo" onclick="removePendingPhoto(${i})" aria-label="Remove photo">✕</button>
+      <button type="button" class="remove-photo" onclick="removePendingPhoto(${i})" aria-label="Remove photo">${glyph("close", { accent: "currentColor" })}</button>
     </div>`).join("")}</div>`;
 }
 
@@ -769,7 +772,7 @@ function openListingForm(existing = null) {
     <div class="field">
       <label>Photos <span style="font-weight:400;color:var(--muted)">(up to 6)</span></label>
       <label class="upload-area">
-        📷 Click to add photos
+        ${glyph("camera")} Click to add photos
         <input type="file" accept="image/*" multiple style="display:none" onchange="handlePhotoSelect(this)" />
       </label>
       <div class="upload-grid-wrap">${renderUploadGrid()}</div>
@@ -932,7 +935,7 @@ function listingPhotoThumb(listing) {
   if (photos && photos.length && FILES_URL) {
     return `<img class="listing-photo" src="${files.url(photos[0].file_id)}" alt="" loading="lazy" />`;
   }
-  return `<div class="listing-photo">${categoryIcon(listing.category)}</div>`;
+  return `<div class="listing-photo">${glyph(categoryGlyph(listing.category))}</div>`;
 }
 
 function statusBadge(status) {
@@ -961,8 +964,8 @@ function renderTabs() {
     </button>`).join("")}</div>`;
 }
 
-function emptyState(icon, text, actionHtml = "") {
-  return `<div class="empty-state"><div class="icon">${icon}</div><p>${text}</p>${actionHtml}</div>`;
+function emptyState(pose, text, actionHtml = "") {
+  return `<div class="empty-state"><div class="icon">${chickadee(pose)}</div><p>${text}</p>${actionHtml}</div>`;
 }
 
 // ── Render: browse ─────────────────────────────────────────────────────────────
@@ -973,7 +976,7 @@ function renderBrowse() {
 
   const catTabs = `<div class="cat-tabs">
     <button class="cat-tab ${categoryFilter === "all" ? "active" : ""}" onclick="setCategoryFilter('all')">All</button>
-    ${CATEGORIES.map(c => `<button class="cat-tab ${categoryFilter === c.id ? "active" : ""}" onclick="setCategoryFilter('${c.id}')">${c.icon} ${esc(c.label)}</button>`).join("")}
+    ${CATEGORIES.map(c => `<button class="cat-tab ${categoryFilter === c.id ? "active" : ""}" onclick="setCategoryFilter('${c.id}')">${glyph(c.glyph)} ${esc(c.label)}</button>`).join("")}
   </div>`;
 
   const filterBar = `<div class="filter-bar">
@@ -990,7 +993,7 @@ function renderBrowse() {
         <div class="listing-meta">${avatarHtml(l.seller_id, l.seller_name)} ${esc(l.seller_name)} · ${esc(formatRelativeDate(l.created_at))}</div>
       </div>
     </div>`).join("")}</div>`
-    : emptyState("🛍️", listings.length ? "No listings match your filters." : "No listings yet — be the first to post one!",
+    : emptyState(listings.length ? "searching" : "nest", listings.length ? "No listings match your filters." : "No listings yet — be the first to post one!",
         ME ? `<button class="btn btn-primary" onclick="openListingForm()">+ New listing</button>` : "");
 
   return `${renderTabs()}${filterBar}${catTabs}${grid}`;
@@ -1006,7 +1009,7 @@ function renderListingDetail() {
 
   const mainPhoto = photos.length && FILES_URL
     ? `<img class="photo-main" src="${files.url(photos[currentPhotoIdx]?.file_id ?? photos[0].file_id)}" alt="" />`
-    : `<div class="photo-main">${categoryIcon(l.category)}</div>`;
+    : `<div class="photo-main">${glyph(categoryGlyph(l.category))}</div>`;
 
   const thumbs = photos.length > 1 && FILES_URL ? `<div class="photo-thumbs">${photos.map((p, i) => `
     <img class="photo-thumb ${i === currentPhotoIdx ? "active" : ""}" src="${files.url(p.file_id)}" alt="" onclick="setPhotoIdx(${i})" />
@@ -1021,8 +1024,8 @@ function renderListingDetail() {
       ${l.status === "active" ? `<button class="btn btn-danger btn-sm" data-action="remove-listing" data-id="${esc(l.id)}">Remove</button>` : ""}
     `;
   } else {
-    if (canMessageSeller(l, ME)) actions += `<button class="btn btn-primary btn-sm" data-action="start-inquiry" data-id="${esc(l.id)}">💬 Ask a question</button>`;
-    if (ME && l.status !== "removed") actions += `<button class="btn btn-ghost btn-sm" data-testid="report-listing" data-action="open-report" data-id="${esc(l.id)}">🚩 Report</button>`;
+    if (canMessageSeller(l, ME)) actions += `<button class="btn btn-primary btn-sm" data-action="start-inquiry" data-id="${esc(l.id)}">${glyph("messages")} Ask a question</button>`;
+    if (ME && l.status !== "removed") actions += `<button class="btn btn-ghost btn-sm" data-testid="report-listing" data-action="open-report" data-id="${esc(l.id)}">${glyph("flag")} Report</button>`;
     if (canModerateMe() && l.status !== "removed") actions += `<button class="btn btn-danger btn-sm" data-testid="moderate-remove" data-action="remove-listing" data-id="${esc(l.id)}">Remove (leadership)</button>`;
   }
 
@@ -1034,7 +1037,7 @@ function renderListingDetail() {
       </div>
       <div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-          <span class="badge badge-muted">${categoryIcon(l.category)} ${esc(categoryLabel(l.category))}</span>
+          <span class="badge badge-muted">${glyph(categoryGlyph(l.category))} ${esc(categoryLabel(l.category))}</span>
           ${statusBadge(l.status)}
         </div>
         <div class="detail-title">${esc(l.title)}</div>
@@ -1126,7 +1129,7 @@ window.confirmRemoveListing = async function(id) {
 
 // ── Render: My Listings ────────────────────────────────────────────────────────
 function renderMyListings() {
-  if (!ME) return `${renderTabs()}${emptyState("👤", "Sign in to manage your own listings.")}`;
+  if (!ME) return `${renderTabs()}${emptyState("perched", "Sign in to manage your own listings.")}`;
   const mine = sortListings(filterListings(listings, { sellerId: ME.id, includeAll: true }));
 
   const grid = mine.length ? `<div class="listing-grid">${mine.map(l => `
@@ -1141,7 +1144,7 @@ function renderMyListings() {
         <div class="listing-meta">${esc(formatRelativeDate(l.created_at))}</div>
       </div>
     </div>`).join("")}</div>`
-    : emptyState("📭", "You haven't posted anything yet.", `<button class="btn btn-primary" onclick="openListingForm()">+ New listing</button>`);
+    : emptyState("nest", "You haven't posted anything yet.", `<button class="btn btn-primary" onclick="openListingForm()">+ New listing</button>`);
 
   return `${renderTabs()}
     <div class="filter-bar"><div></div><button class="btn btn-primary" onclick="openListingForm()">+ New listing</button></div>
@@ -1150,10 +1153,10 @@ function renderMyListings() {
 
 // ── Render: Inquiries ──────────────────────────────────────────────────────────
 function renderInquiries() {
-  if (!ME) return `${renderTabs()}${emptyState("👤", "Sign in to view your messages.")}`;
+  if (!ME) return `${renderTabs()}${emptyState("perched", "Sign in to view your messages.")}`;
   const mine = sortInquiries(inquiriesForMember(inquiries, ME));
 
-  if (!mine.length) return `${renderTabs()}${emptyState("💬", "No conversations yet. Ask a seller a question from any listing to start one.")}`;
+  if (!mine.length) return `${renderTabs()}${emptyState("mail", "No conversations yet. Ask a seller a question from any listing to start one.")}`;
 
   const rows = mine.map(i => {
     const listing = listings.find(l => l.id === i.listing_id);
@@ -1235,7 +1238,7 @@ function renderFlagged() {
   if (!canModerateMe()) return renderBrowse();
   const queue = sortFlags(openFlags(flags));
 
-  if (!queue.length) return `${renderTabs()}${emptyState("✅", "No reports awaiting review.")}`;
+  if (!queue.length) return `${renderTabs()}${emptyState("sleeping", "No reports awaiting review.")}`;
 
   const cards = queue.map(f => {
     const listing = listings.find(l => l.id === f.listing_id);
@@ -1277,7 +1280,7 @@ function renderHeaderActions() {
   const el = document.getElementById("header-actions");
   if (!el) return;
   el.innerHTML = ME?.isAdmin === true
-    ? `<button class="btn btn-ghost btn-sm" onclick="openSettingsModal()" title="Marketplace settings">⚙️ Settings</button>`
+    ? `<button class="btn btn-ghost btn-sm" onclick="openSettingsModal()" title="Marketplace settings">${glyph("gear")} Settings</button>`
     : "";
 }
 
@@ -1285,7 +1288,7 @@ window.openSettingsModal = function() {
   const isAdmin = ME?.isAdmin === true;
   const g = moderatorGroupCfg();
   const groupOpts = groups.map(grp =>
-    `<option value="${esc(grp.id)}" ${settings.moderator_group_id === grp.id ? "selected" : ""}>👥 ${esc(grp.name)}</option>`
+    `<option value="${esc(grp.id)}" ${settings.moderator_group_id === grp.id ? "selected" : ""}>${esc(grp.name)}</option>`
   ).join("");
 
   const body = isAdmin ? `
@@ -1298,7 +1301,7 @@ window.openSettingsModal = function() {
       <div class="field-hint">
         Members of this group can review reported listings and remove them. Removing a
         listing is recorded so its seller can't reverse it.
-        ${!settings.moderator_group_id ? `<br><span style="color:var(--amber)">⚠️ No group set — reporting works, but no one can review or remove flagged listings until you choose a group.</span>` : ""}
+        ${!settings.moderator_group_id ? `<br><span style="color:var(--amber)">${glyph("warning")} No group set — reporting works, but no one can review or remove flagged listings until you choose a group.</span>` : ""}
       </div>
     </div>` : `
     <p style="font-size:0.86rem;color:var(--muted)">
@@ -1307,7 +1310,7 @@ window.openSettingsModal = function() {
     </p>`;
 
   openModal(`
-    <h2>⚙️ Marketplace settings</h2>
+    <h2>${glyph("gear")} Marketplace settings</h2>
     ${body}
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal()">Close</button>
