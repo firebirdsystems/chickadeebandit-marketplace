@@ -14,7 +14,8 @@
     "settings": {"sql": "SELECT key, value FROM app_marketplace__settings WHERE key = 'moderator_group_id'"},
     "moderations": {"sql": "SELECT m.listing_id, m.status, m.reason, m.moderated_by, m.moderated_at FROM app_marketplace__moderations m JOIN app_marketplace__listings l ON l.id = m.listing_id ORDER BY l.created_at DESC LIMIT 500"},
     "listings": {"sql": "SELECT id, title, description, price_cents, category, pickup_details, status, seller_id, seller_name, created_at, updated_at FROM app_marketplace__listings ORDER BY created_at DESC LIMIT 500"},
-    "flags": {"sql": "SELECT id, listing_id, reporter_id, reporter_name, reason, status, created_at, resolved_by, resolved_at FROM app_marketplace__flags WHERE status = 'open' ORDER BY created_at ASC"}
+    "flags": {"sql": "SELECT id, listing_id, reporter_id, reporter_name, reason, status, created_at, resolved_by, resolved_at FROM app_marketplace__flags WHERE status = 'open' ORDER BY created_at ASC"},
+    "inquiries": {"sql": "SELECT id, listing_id, buyer_id, buyer_name, seller_id, created_at FROM app_marketplace__inquiries WHERE buyer_id = ? OR seller_id = ? ORDER BY created_at DESC", "params": [":me", ":me"]}
   },
   "category": "community",
   "tags": [
@@ -161,9 +162,21 @@
       }
     }
   },
+  "required_capabilities": ["image_cutout"],
   "delete_file_columns": {
     "listing_photos": [
-      "file_id"
+      "file_id",
+      "thumb_file_id",
+      "cutout_file_id",
+      "cutout_thumb_file_id"
+    ]
+  },
+  "update_file_columns": {
+    "listing_photos": [
+      "file_id",
+      "thumb_file_id",
+      "cutout_file_id",
+      "cutout_thumb_file_id"
     ]
   },
   "member_references": {
@@ -174,7 +187,7 @@
         {
           "table": "listing_photos",
           "foreign_key": "listing_id",
-          "file_id_column": "file_id"
+          "file_id_column": ["file_id", "thumb_file_id", "cutout_file_id", "cutout_thumb_file_id"]
         },
         {
           "table": "moderations",

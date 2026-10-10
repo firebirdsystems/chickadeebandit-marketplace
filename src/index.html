@@ -115,6 +115,8 @@
       width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--accent-light);
       display: flex; align-items: center; justify-content: center; font-size: 2.4rem;
     }
+    /* A cutout is transparent and drawn whole, never cropped to fill. */
+    .listing-photo.cutout { object-fit: contain; }
     .listing-card-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
     .listing-price { font-weight: 700; font-size: 1rem; }
     .listing-price.free { color: var(--green); }
@@ -166,6 +168,9 @@
       background: var(--accent-light); display: flex; align-items: center; justify-content: center;
       font-size: 3rem; border: 1px solid var(--border);
     }
+    .photo-main.cutout, .photo-thumb.cutout { object-fit: contain; }
+    .photo-tools { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+    .photo-note { color: var(--muted); font-size: 0.8rem; }
     .photo-thumbs { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
     .photo-thumb {
       width: 56px; height: 56px; object-fit: cover; border-radius: 6px; cursor: pointer;
@@ -281,6 +286,7 @@ import {
   isOwnListing, canEditListing, canMessageSeller, canModerate, moderatorGroup,
   filterListings, sortListings, inquiriesForMember, sortInquiries,
   openFlags, sortFlags, searchableFields,
+  canEditPhoto, shownPhotoId, tilePhotoId, cutoutRefusal,
 } from "./logic.js";
 
 // The page heading is static markup; its mark comes from the SDK.
@@ -305,9 +311,13 @@ let moderations = new Map(); // listing_id -> { status, reason, moderated_by, mo
 
 let view = "browse"; // browse | listing | my-listings | inquiries | inquiry | flagged
 let listings = [];
-let listingPhotos = new Map(); // listingId -> [{ id, file_id, position }]
+let listingPhotos = new Map(); // listingId -> [{ id, file_id, thumb_file_id, cutout_file_id, cutout_thumb_file_id, uploaded_by, position }]
 let currentListing = null;
 let currentPhotoIdx = 0;
+// The photo row having its background removed or put back, if any.
+let cutoutBusy = "";
+// Why the last request to remove a background was refused, shown under the photo.
+let cutoutError = "";
 
 let inquiries = [];           // threads where ME is buyer or seller
 let currentInquiry = null;
@@ -435,7 +445,7 @@ async function loadListings() {
 async function loadPhotosFor(listingId) {
   if (!DB) return [];
   const { rows } = await db(
-    `SELECT id, file_id, position FROM app_marketplace__listing_photos WHERE listing_id = ? ORDER BY position ASC`,
+    `SELECT id, file_id, thumb_file_id, cutout_file_id, cutout_thumb_file_id, uploaded_by, position FROM app_marketplace__listing_photos WHERE listing_id = ? ORDER BY position ASC`,
     [listingId]
   );
   const photos = rows ?? [];
@@ -529,13 +539,14 @@ async function createListing(fields, photoFiles) {
   const photos = [];
   for (let i = 0; i < photoFiles.length; i++) {
     try {
-      const { id: fileId } = await files.upload(photoFiles[i]);
+      // The hub keeps a small copy with the photo, for the grid and the strip.
+      const { id: fileId, thumbnailId = null } = await files.upload(photoFiles[i], { thumbnail: true });
       const photoId = uuid();
       await db(
-        `INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)`,
-        [photoId, id, fileId, i, now, ME.id]
+        `INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, thumb_file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [photoId, id, fileId, thumbnailId, i, now, ME.id]
       );
-      photos.push({ id: photoId, file_id: fileId, position: i });
+      photos.push({ id: photoId, file_id: fileId, thumb_file_id: thumbnailId, cutout_file_id: null, uploaded_by: ME.id, position: i });
     } catch { /* skip failed uploads — listing still created */ }
   }
   listingPhotos.set(id, photos);
@@ -848,18 +859,66 @@ async function addPhotosToListing(listingId, files2) {
   let pos = existing.length;
   for (const f of files2) {
     try {
-      const { id: fileId } = await files.upload(f);
+      const { id: fileId, thumbnailId = null } = await files.upload(f, { thumbnail: true });
       const photoId = uuid();
       const now = new Date().toISOString();
-      await db(`INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)`,
-        [photoId, listingId, fileId, pos, now, ME.id]);
-      existing.push({ id: photoId, file_id: fileId, position: pos });
+      await db(`INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, thumb_file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [photoId, listingId, fileId, thumbnailId, pos, now, ME.id]);
+      existing.push({ id: photoId, file_id: fileId, thumb_file_id: thumbnailId, cutout_file_id: null, uploaded_by: ME.id, position: pos });
       pos++;
     } catch { /* skip failed uploads */ }
   }
   listingPhotos.set(listingId, existing);
   if (currentListing?.id === listingId) { currentPhotoIdx = 0; render(); }
 }
+
+// ── Photo background ───────────────────────────────────────────────────────────
+function currentPhotoRow(photoId) {
+  return (listingPhotos.get(currentListing?.id) ?? []).find(p => p.id === photoId) ?? null;
+}
+
+// The hub answers a photo UPDATE that changed no row with a plain success: the
+// listing was sold or removed, or the photo replaced or deleted, somewhere
+// else. Say so, and show what is stored rather than what was asked for.
+async function photoNotChanged() {
+  const id = currentListing?.id;
+  cutoutError = "That photo could not be changed. This listing was updated somewhere else.";
+  if (!id) return;
+  await Promise.all([loadListings(), loadPhotosFor(id)]);
+  currentListing = listings.find(l => l.id === id) ?? currentListing;
+}
+
+window.removeBackground = async function(photoId) {
+  const photo = currentPhotoRow(photoId);
+  if (!photo?.file_id || cutoutBusy) return;
+  const fileId = photo.file_id;
+  cutoutBusy = photoId; cutoutError = ""; render();
+  try {
+    // The hub also keeps a small copy of the cutout, for the grid and the strip.
+    const cut = await files.cutout(fileId, { thumbnail: true });
+    const smallId = cut.thumbnailId ?? null;
+    // Kept only if the row still names the photo it was made from.
+    const { changed } = await db(`UPDATE app_marketplace__listing_photos SET cutout_file_id = ?, cutout_thumb_file_id = ? WHERE id = ? AND file_id = ?`,
+      [cut.id, smallId, photoId, fileId]);
+    if (changed === 0) await photoNotChanged();
+    else Object.assign(photo, { cutout_file_id: cut.id, cutout_thumb_file_id: smallId });
+  } catch (e) { cutoutError = e.status ? cutoutRefusal(e.status, e.detail) : e.message; }
+  cutoutBusy = ""; render();
+};
+
+window.restoreBackground = async function(photoId) {
+  const photo = currentPhotoRow(photoId);
+  if (!photo?.cutout_file_id || cutoutBusy) return;
+  cutoutBusy = photoId; cutoutError = ""; render();
+  try {
+    // The hub reclaims the cutout and its small copy once no row names them.
+    // The photo is untouched.
+    const { changed } = await db(`UPDATE app_marketplace__listing_photos SET cutout_file_id = NULL, cutout_thumb_file_id = NULL WHERE id = ?`, [photoId]);
+    if (changed === 0) await photoNotChanged();
+    else Object.assign(photo, { cutout_file_id: null, cutout_thumb_file_id: null });
+  } catch (e) { cutoutError = e.message; }
+  cutoutBusy = ""; render();
+};
 
 // ── Report / flag form ─────────────────────────────────────────────────────────
 function openReportForm(listing) {
@@ -907,6 +966,7 @@ window.openListing = async function(id) {
   if (!listing) return;
   currentListing = listing;
   currentPhotoIdx = 0;
+  cutoutError = "";
   view = "listing";
   if (!listingPhotos.has(id)) await loadPhotosFor(id);
   render();
@@ -922,7 +982,7 @@ window.handleSearch = function(input) {
   render();
 };
 
-window.setPhotoIdx = function(idx) { currentPhotoIdx = idx; render(); };
+window.setPhotoIdx = function(idx) { currentPhotoIdx = idx; cutoutError = ""; render(); };
 
 // ── Render: shared bits ────────────────────────────────────────────────────────
 function avatarHtml(id, name, size = "") {
@@ -933,7 +993,7 @@ function avatarHtml(id, name, size = "") {
 function listingPhotoThumb(listing) {
   const photos = listingPhotos.get(listing.id);
   if (photos && photos.length && FILES_URL) {
-    return `<img class="listing-photo" src="${files.url(photos[0].file_id)}" alt="" loading="lazy" />`;
+    return `<img class="listing-photo${photos[0].cutout_file_id ? " cutout" : ""}" src="${files.url(tilePhotoId(photos[0]))}" alt="" loading="lazy" />`;
   }
   return `<div class="listing-photo">${glyph(categoryGlyph(listing.category))}</div>`;
 }
@@ -1007,13 +1067,26 @@ function renderListingDetail() {
   const mine = isOwnListing(l, ME);
   const isFree = l.price_cents == null || l.price_cents === 0;
 
+  const shown = photos[currentPhotoIdx] ?? photos[0];
   const mainPhoto = photos.length && FILES_URL
-    ? `<img class="photo-main" src="${files.url(photos[currentPhotoIdx]?.file_id ?? photos[0].file_id)}" alt="" />`
+    ? `<img class="photo-main${shown.cutout_file_id ? " cutout" : ""}" src="${files.url(shownPhotoId(shown))}" alt="" />`
     : `<div class="photo-main">${glyph(categoryGlyph(l.category))}</div>`;
 
   const thumbs = photos.length > 1 && FILES_URL ? `<div class="photo-thumbs">${photos.map((p, i) => `
-    <img class="photo-thumb ${i === currentPhotoIdx ? "active" : ""}" src="${files.url(p.file_id)}" alt="" onclick="setPhotoIdx(${i})" />
+    <img class="photo-thumb ${i === currentPhotoIdx ? "active" : ""}${p.cutout_file_id ? " cutout" : ""}" src="${files.url(tilePhotoId(p))}" alt="" onclick="setPhotoIdx(${i})" />
   `).join("")}</div>` : "";
+
+  // Offered for the one photo shown large, to whoever may change its row, and
+  // only while the listing is active: a sold or removed listing is a locked
+  // record, and its photo rows are frozen along with it.
+  const mayCut = photos.length && FILES_URL && l.status === "active"
+    && canEditPhoto(shown, ME, groups, settings.moderator_group_id);
+  const photoTools = mayCut || (cutoutError && photos.length) ? `<div class="photo-tools">
+    ${mayCut ? (shown.cutout_file_id
+      ? `<button class="btn btn-ghost btn-sm" data-action="restore-bg" data-id="${esc(shown.id)}" ${cutoutBusy ? "disabled" : ""}>Show photo as taken</button>`
+      : `<button class="btn btn-ghost btn-sm" data-action="remove-bg" data-id="${esc(shown.id)}" ${cutoutBusy ? "disabled" : ""}>${cutoutBusy === shown.id ? "Removing background…" : "Remove background"}</button>`) : ""}
+    ${cutoutError ? `<span class="photo-note" role="status">${esc(cutoutError)}</span>` : ""}
+  </div>` : "";
 
   let actions = "";
   if (mine) {
@@ -1033,7 +1106,7 @@ function renderListingDetail() {
     <button class="back-btn" onclick="goTo('browse')">← Back to browse</button>
     <div class="detail-grid" data-testid="listing-detail" data-listing-id="${esc(l.id)}" data-listing-status="${esc(l.status)}">
       <div>
-        <div class="photo-carousel">${mainPhoto}${thumbs}</div>
+        <div class="photo-carousel">${mainPhoto}${photoTools}${thumbs}</div>
       </div>
       <div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
@@ -1087,17 +1160,22 @@ async function relistListing(listing) {
   const newListing = { ...listing, id: newId, status: "active", seller_id: ME.id, seller_name: ME.name, created_at: now, updated_at: now };
   listings = [newListing, ...listings];
 
-  // Photo rows are cheap and uploaded files are never deleted, so the copies
-  // can point at the same stored files.
+  // Photo rows are cheap and the hub keeps a stored file for as long as any row
+  // names it, so the copies can point at the same stored files. The small
+  // copies and the cutout come along with their photo, so the relisted item
+  // looks the way the sold one did.
   const photos = listingPhotos.get(listing.id) ?? [];
   const copies = [];
   for (let i = 0; i < photos.length; i++) {
     const photoId = uuid();
+    const thumbId = photos[i].thumb_file_id ?? null;
+    const cutoutId = photos[i].cutout_file_id ?? null;
+    const cutoutThumbId = photos[i].cutout_thumb_file_id ?? null;
     await db(
-      `INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)`,
-      [photoId, newId, photos[i].file_id, i, now, ME.id]
+      `INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, thumb_file_id, cutout_file_id, cutout_thumb_file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [photoId, newId, photos[i].file_id, thumbId, cutoutId, cutoutThumbId, i, now, ME.id]
     ).catch(() => {});
-    copies.push({ id: photoId, file_id: photos[i].file_id, position: i });
+    copies.push({ id: photoId, file_id: photos[i].file_id, thumb_file_id: thumbId, cutout_file_id: cutoutId, cutout_thumb_file_id: cutoutThumbId, uploaded_by: ME.id, position: i });
   }
   listingPhotos.set(newId, copies);
 
@@ -1385,6 +1463,8 @@ const ACTION_DISPATCH = {
   "submit-report": (id) => window.submitReport(id),
   "submit-listing":(id) => window.submitListingForm(id || null),
   "open-inquiry":  (id) => window.openInquiryById(id),
+  "remove-bg":     (id) => window.removeBackground(id),
+  "restore-bg":    (id) => window.restoreBackground(id),
 };
 document.addEventListener("click", (e) => {
   const el = e.target.closest("[data-action][data-id]");

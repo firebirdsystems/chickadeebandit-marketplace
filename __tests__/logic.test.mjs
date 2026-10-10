@@ -4,6 +4,7 @@ import {
   isOwnListing, canEditListing, canMessageSeller, canModerate, moderatorGroup,
   filterListings, sortListings, inquiriesForMember, sortInquiries,
   openFlags, sortFlags, searchableFields,
+  canEditPhoto, shownPhotoId, tilePhotoId, cutoutRefusal,
 } from "../src/logic.js";
 import { testPrivilegedGateContract } from "./helpers/privileged-gate.mjs";
 
@@ -212,5 +213,72 @@ describe("openFlags / sortFlags", () => {
   });
   it("sorts oldest first (review queue order)", () => {
     expect(sortFlags(flags).map(f => f.id)).toEqual(["f-2", "f-3", "f-1"]);
+  });
+});
+
+describe("canEditPhoto", () => {
+  const groups = [{ id: "g1", memberIds: ["mod"] }];
+  const photo = { id: "ph1", file_id: "p1", uploaded_by: "seller" };
+
+  it("allows the member who attached the photo", () => {
+    expect(canEditPhoto(photo, { id: "seller" }, groups, "g1")).toBe(true);
+  });
+  it("allows a moderator, but only once a moderator group is configured", () => {
+    expect(canEditPhoto(photo, { id: "mod" }, groups, "g1")).toBe(true);
+    expect(canEditPhoto(photo, { id: "mod" }, groups, null)).toBe(false);
+  });
+  it("refuses any other member, adult or not", () => {
+    expect(canEditPhoto(photo, { id: "neighbour", role: "adult" }, groups, "g1")).toBe(false);
+  });
+  it("refuses a photo with no recorded uploader to everyone but a moderator", () => {
+    expect(canEditPhoto({ ...photo, uploaded_by: "" }, { id: "seller" }, groups, "g1")).toBe(false);
+    expect(canEditPhoto({ ...photo, uploaded_by: "" }, { id: "mod" }, groups, "g1")).toBe(true);
+  });
+  it("refuses when nobody is signed in", () => {
+    expect(canEditPhoto(photo, null, groups, "g1")).toBe(false);
+  });
+});
+
+describe("shownPhotoId", () => {
+  it("draws the cutout when the photo has one, else the photo as taken", () => {
+    expect(shownPhotoId({ file_id: "p1", cutout_file_id: "c1" })).toBe("c1");
+    expect(shownPhotoId({ file_id: "p1", cutout_file_id: null })).toBe("p1");
+    expect(shownPhotoId({ file_id: "p1" })).toBe("p1");
+    expect(shownPhotoId({ file_id: "" })).toBe("");
+  });
+});
+
+describe("cutoutRefusal", () => {
+  it("tells the monthly allowance apart from the per-minute limit", () => {
+    expect(cutoutRefusal(429, { limit: 100 })).toBe("This month's 100 photo cutouts are used up. The photo is kept as taken.");
+    expect(cutoutRefusal(429, { error: "Too many requests" })).toBe("Too many requests just now. Try again in a minute.");
+    expect(cutoutRefusal(429)).toBe("Too many requests just now. Try again in a minute.");
+  });
+  it("says why for each refusal the hub can give", () => {
+    expect(cutoutRefusal(409)).toMatch(/already being removed/);
+    expect(cutoutRefusal(402)).toMatch(/active plan/);
+    expect(cutoutRefusal(503)).toMatch(/unavailable right now/);
+    expect(cutoutRefusal(413)).toMatch(/too large/);
+    expect(cutoutRefusal(415)).toMatch(/JPEG, PNG or WebP/);
+    expect(cutoutRefusal(507)).toMatch(/no storage left/);
+  });
+  it("falls back to a plain sentence for anything else", () => {
+    expect(cutoutRefusal(500)).toBe("The background could not be removed.");
+    expect(cutoutRefusal(undefined)).toBe("The background could not be removed.");
+  });
+});
+
+describe("tilePhotoId", () => {
+  it("draws the small copy of the picture shown, else that picture", () => {
+    expect(tilePhotoId({ file_id: "p1", thumb_file_id: "t1", cutout_file_id: "c1", cutout_thumb_file_id: "ct1" })).toBe("ct1");
+    expect(tilePhotoId({ file_id: "p1", thumb_file_id: "t1", cutout_file_id: null })).toBe("t1");
+    expect(tilePhotoId({ file_id: "p1", thumb_file_id: null })).toBe("p1");
+    expect(tilePhotoId({ file_id: "p1" })).toBe("p1");
+    expect(tilePhotoId(null)).toBe("");
+  });
+  it("never shows the photo's small copy for a cutout", () => {
+    // A cutout with no small copy of its own is drawn whole.
+    expect(tilePhotoId({ file_id: "p1", thumb_file_id: "t1", cutout_file_id: "c1", cutout_thumb_file_id: null })).toBe("c1");
+    expect(tilePhotoId({ file_id: "p1", thumb_file_id: "t1", cutout_file_id: "c1" })).toBe("c1");
   });
 });

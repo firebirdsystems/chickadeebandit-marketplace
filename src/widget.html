@@ -55,6 +55,8 @@
       flex-shrink: 0;
       background: var(--hub-bg, #f3f4f6);
     }
+    /* A cutout is transparent and drawn whole, never cropped to fill. */
+    .listing-thumb.cutout { object-fit: contain; }
     .listing-thumb-placeholder {
       width: 36px; height: 36px;
       border-radius: 6px;
@@ -131,18 +133,18 @@ async function init() {
 
   const ids = listings.map(l => l.id);
   const { rows: photos } = await db(`
-    SELECT listing_id, file_id
+    SELECT listing_id, file_id, thumb_file_id, cutout_file_id, cutout_thumb_file_id
     FROM app_marketplace__listing_photos
     WHERE listing_id IN (${ids.map(() => "?").join(",")})
       AND position = 0
   `, ids);
-  const photoByListing = new Map(photos.map(p => [p.listing_id, p.file_id]));
+  const photoByListing = new Map(photos.map(p => [p.listing_id, p]));
 
   const content = document.getElementById("content");
   content.innerHTML = listings.map(l => {
     const photo = photoByListing.get(l.id);
     const thumb = photo
-      ? `<img class="listing-thumb" src="${files.url(photo)}" alt="" loading="lazy" />`
+      ? `<img class="listing-thumb${photo.cutout_file_id ? " cutout" : ""}" src="${files.url(photo.cutout_file_id ? photo.cutout_thumb_file_id || photo.cutout_file_id : photo.thumb_file_id || photo.file_id)}" alt="" loading="lazy" />`
       : `<div class="listing-thumb-placeholder">${glyph(categoryGlyph(l.category))}</div>`;
     return `
       <div class="listing-row">
