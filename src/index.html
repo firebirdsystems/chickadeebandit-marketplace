@@ -361,8 +361,14 @@ async function db(sql, params = []) {
 // The page's one place for a failure the member should see: a bar pinned to
 // the bottom, above any open dialog. It fades after a few seconds unless
 // `sticky` (a failed first load, where the page under it is incomplete).
+//
+// Only this app's own wording is shown: an error it wrote for the member is
+// marked `forUser` where it is thrown (`userError`). Anything else — the hub's
+// error text included — reads as `line` and goes to the console.
+function userError(message) { return Object.assign(new Error(message), { forUser: true }); }
 let errorTimer = null;
-function showError(err, sticky = false) {
+function showError(err, sticky = false, line = "Couldn’t save — try again.") {
+  if (!err?.forUser) console.error("marketplace: write failed", err);
   let el = document.getElementById("app-error");
   if (!el) {
     el = document.createElement("div");
@@ -371,7 +377,7 @@ function showError(err, sticky = false) {
     el.setAttribute("role", "alert");
     document.body.appendChild(el);
   }
-  el.textContent = err?.message || "Something went wrong. Try again.";
+  el.textContent = err?.forUser ? err.message : line;
   el.style.display = "";
   clearTimeout(errorTimer);
   if (!sticky) errorTimer = setTimeout(() => { el.style.display = "none"; }, 6000);
@@ -568,6 +574,7 @@ async function createListing(fields, photoFiles) {
 
   // Upload photos after the row exists so we always have a listing to attach them to.
   const photos = [];
+  let missed = 0;
   for (let i = 0; i < photoFiles.length; i++) {
     try {
       // The hub keeps a small copy with the photo, for the grid and the strip.
@@ -578,7 +585,12 @@ async function createListing(fields, photoFiles) {
         [photoId, id, fileId, thumbnailId, i, now, ME.id]
       );
       photos.push({ id: photoId, file_id: fileId, thumb_file_id: thumbnailId, cutout_file_id: null, uploaded_by: ME.id, position: i });
-    } catch { /* skip failed uploads — listing still created */ }
+    } catch (e) {
+      // One photo that will not upload or store does not undo the listing: it
+      // is left off and counted, so the seller is told below.
+      console.error("marketplace: photo not added", e);
+      missed++;
+    }
   }
   listingPhotos.set(id, photos);
 
@@ -587,6 +599,7 @@ async function createListing(fields, photoFiles) {
   currentListing = newListing;
   currentPhotoIdx = 0;
   render();
+  if (missed) showError(userError(`Listed, but ${photosMissed(missed, photoFiles.length)} couldn’t be added. Add ${missed === 1 ? "it" : "them"} again from Edit.`));
 
   Promise.all([
     logActivity(id, "created", `${ME.name} listed "${fields.title}"`),
@@ -599,6 +612,13 @@ async function createListing(fields, photoFiles) {
   ]).catch(() => {});
 }
 
+// "its photo" / "its photos" / "2 of its 5 photos", for the line that says a
+// listing saved without some of the photos picked for it.
+function photosMissed(missed, total) {
+  if (missed === total) return missed === 1 ? "its photo" : "its photos";
+  return `${missed} of its ${total} photos`;
+}
+
 // A listing UPDATE the hub narrowed to nothing still answers success: the
 // listing was sold or removed somewhere else (those rows are locked), or is no
 // longer this member's to change. Show what is stored, then say so.
@@ -608,7 +628,7 @@ async function listingNotChanged() {
   if (currentListing) currentListing = listings.find(l => l.id === currentListing.id) ?? currentListing;
   closeModal();
   render();
-  throw new Error("This listing can no longer be changed.");
+  throw userError("This listing can no longer be changed.");
 }
 
 async function updateListing(listing, fields) {
@@ -668,7 +688,7 @@ async function startOrOpenInquiry(listing) {
       // messages must go to that row, not to an id nothing was stored under.
       await loadInquiries();
       inquiry = inquiries.find(i => i.listing_id === listing.id && i.buyer_id === ME.id);
-      if (!inquiry) throw new Error("Couldn’t start this conversation. Try again.");
+      if (!inquiry) throw userError("Couldn’t start this conversation. Try again.");
     } else {
       inquiry = { id, listing_id: listing.id, buyer_id: ME.id, buyer_name: ME.name, seller_id: listing.seller_id, created_at: now };
       inquiries = [inquiry, ...inquiries];
@@ -790,7 +810,7 @@ async function resolveFlag(flag, action) {
   if (!closed) {
     await loadFlags();
     render();
-    throw new Error("This report could not be closed.");
+    throw userError("This report could not be closed.");
   }
 
   flags = flags.filter(f => f.id !== flag.id);
@@ -910,19 +930,25 @@ window.submitListingForm = async function(existingId) {
     if (existingId) {
       const existing = listings.find(l => l.id === existingId);
       await updateListing(existing, fields);
-      if (pendingPhotoFiles.length) await addPhotosToListing(existing.id, pendingPhotoFiles);
+      if (pendingPhotoFiles.length) {
+        // The edit itself is saved by now; photos that did not make it are counted.
+        const picked = pendingPhotoFiles.length;
+        const missed = await addPhotosToListing(existing.id, pendingPhotoFiles);
+        if (missed) showError(userError(`Saved, but ${missed === picked ? (missed === 1 ? "the new photo" : "the new photos") : `${missed} of the ${picked} new photos`} couldn’t be added. Add ${missed === 1 ? "it" : "them"} again from Edit.`));
+      }
     } else {
       await createListing(fields, pendingPhotoFiles);
     }
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = existingId ? "Save" : "Post listing"; }
-    showError(e);
+    showError(e, false, existingId ? "Couldn’t save the listing — try again." : "Couldn’t post the listing — try again.");
   }
 };
 
 async function addPhotosToListing(listingId, files2) {
   const existing = listingPhotos.get(listingId) ?? await loadPhotosFor(listingId);
   let pos = existing.length;
+  let missed = 0;
   for (const f of files2) {
     try {
       const { id: fileId, thumbnailId = null } = await files.upload(f, { thumbnail: true });
@@ -932,10 +958,15 @@ async function addPhotosToListing(listingId, files2) {
         [photoId, listingId, fileId, thumbnailId, pos, now, ME.id]);
       existing.push({ id: photoId, file_id: fileId, thumb_file_id: thumbnailId, cutout_file_id: null, uploaded_by: ME.id, position: pos });
       pos++;
-    } catch { /* skip failed uploads */ }
+    } catch (e) {
+      // Left off and counted: the caller tells the seller how many.
+      console.error("marketplace: photo not added", e);
+      missed++;
+    }
   }
   listingPhotos.set(listingId, existing);
   if (currentListing?.id === listingId) { currentPhotoIdx = 0; render(); }
+  return missed;
 }
 
 // ── Photo background ───────────────────────────────────────────────────────────
@@ -968,7 +999,10 @@ window.removeBackground = async function(photoId) {
       [cut.id, smallId, photoId, fileId]);
     if (changed === 0) await photoNotChanged();
     else Object.assign(photo, { cutout_file_id: cut.id, cutout_thumb_file_id: smallId });
-  } catch (e) { cutoutError = e.status ? cutoutRefusal(e.status, e.detail) : e.message; }
+  } catch (e) {
+    console.error("marketplace: cutout failed", e);
+    cutoutError = e.status ? cutoutRefusal(e.status, e.detail) : "Couldn’t remove the background — try again.";
+  }
   cutoutBusy = ""; render();
 };
 
@@ -982,7 +1016,10 @@ window.restoreBackground = async function(photoId) {
     const { changed } = await db(`UPDATE app_marketplace__listing_photos SET cutout_file_id = NULL, cutout_thumb_file_id = NULL WHERE id = ?`, [photoId]);
     if (changed === 0) await photoNotChanged();
     else Object.assign(photo, { cutout_file_id: null, cutout_thumb_file_id: null });
-  } catch (e) { cutoutError = e.message; }
+  } catch (e) {
+    console.error("marketplace: restore failed", e);
+    cutoutError = "Couldn’t restore the background — try again.";
+  }
   cutoutBusy = ""; render();
 };
 
@@ -1015,7 +1052,7 @@ window.submitReport = async function(listingId) {
     await fileFlag(listings.find(l => l.id === listingId), reason);
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = "Submit report"; }
-    showError(e);
+    showError(e, false, "Couldn’t send the report — try again.");
   }
 };
 
@@ -1259,7 +1296,7 @@ async function relistListing(listing) {
     const which = missed === photos.length
       ? (missed === 1 ? "its photo" : "its photos")
       : `${missed} of its ${photos.length} photos`;
-    showError(new Error(`Relisted, but ${which} couldn’t be copied. Add ${missed === 1 ? "it" : "them"} again from Edit.`));
+    showError(userError(`Relisted, but ${which} couldn’t be copied. Add ${missed === 1 ? "it" : "them"} again from Edit.`));
   }
 }
 window.confirmRemoveListing = async function(id) {
@@ -1383,7 +1420,7 @@ window.submitInquiryMessage = async function() {
     const newTa = document.getElementById("f-message");
     if (newTa) newTa.value = "";
   } catch (e) {
-    showError(e);
+    showError(e, false, "Couldn’t send the message — try again.");
   } finally {
     const newBtn = document.querySelector(".compose-row .btn-primary");
     if (newBtn) { newBtn.disabled = false; newBtn.textContent = "Send"; }
@@ -1489,7 +1526,7 @@ window.saveSettings = async function() {
     render();
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = "Save"; }
-    showError(e);
+    showError(e, false, "Couldn’t save the settings — try again.");
   }
 };
 
@@ -1549,14 +1586,24 @@ const ACTION_DISPATCH = {
   "remove-bg":     (id) => window.removeBackground(id),
   "restore-bg":    (id) => window.restoreBackground(id),
 };
+// What the error bar says when one of these fails for a reason the app did not
+// word itself. Anything not listed gets showError's own line.
+const ACTION_FAILED = {
+  "open-listing":   "Couldn’t load the listing.",
+  "open-inquiry":   "Couldn’t load the conversation.",
+  "start-inquiry":  "Couldn’t open the conversation — try again.",
+  "mark-sold":      "Couldn’t mark the listing sold — try again.",
+  "relist":         "Couldn’t relist the item — try again.",
+  "remove-listing": "Couldn’t remove the listing — try again.",
+};
 document.addEventListener("click", (e) => {
   const el = e.target.closest("[data-action][data-id]");
   if (!el) return;
   const action = el.dataset.action;
   const id = el.dataset.id;
   // A rejected action lands in the error bar rather than vanishing.
-  if (action === "moderate-flag") { window.moderateFlag(id, el.dataset.mod).catch(showError); return; }
-  Promise.resolve(ACTION_DISPATCH[action]?.(id)).catch(showError);
+  if (action === "moderate-flag") { window.moderateFlag(id, el.dataset.mod).catch((err) => showError(err, false, "Couldn’t close the report — try again.")); return; }
+  Promise.resolve(ACTION_DISPATCH[action]?.(id)).catch((err) => showError(err, false, ACTION_FAILED[action]));
 });
 
 // ── Init ───────────────────────────────────────────────────────────────────────

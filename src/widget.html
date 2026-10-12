@@ -36,6 +36,7 @@
       color: #9ca3af;
       text-align: center;
     }
+    .empty[hidden] { display: none; }
     .empty .icon { display: block; margin-bottom: 6px; }
     .empty p { font-size: 12px; }
 
@@ -71,6 +72,7 @@
     .listing-meta { font-size: 11px; color: #9ca3af; }
 
     .listing-price { font-size: 12px; font-weight: 600; color: #6366f1; white-space: nowrap; }
+    .load-error { margin: 8px; padding: 8px 10px; border-radius: 10px; background: var(--hub-tint-danger, #fee2e2); color: var(--hub-tint-danger-fg, #b91c1c); font-size: 0.8rem; }
   </style>
 </head>
 <body>
@@ -82,7 +84,7 @@
 </div>
 
 <div class="content" id="content">
-  <div class="empty">
+  <div class="empty" hidden>
     <span class="icon"></span>
     <p>No listings yet</p>
   </div>
@@ -161,9 +163,14 @@ async function init() {
   }).join("");
 }
 
-init().catch(() => {
-  const note = document.querySelector("#content .empty p");
-  if (note) note.textContent = "Couldn’t load listings.";
+init().then(() => {
+  // The resting empty state is hidden until the first read settles: the tile
+  // must not say "none" before it knows. Content, if any, has replaced it.
+  const empty = document.querySelector("#content .empty");
+  if (empty) empty.hidden = false;
+}).catch(() => {
+  // In place of the resting "No listings yet", which would be a guess.
+  document.getElementById("content").innerHTML = `<div class="load-error" data-testid="load-error" role="alert">Couldn’t load the listings.</div>`;
 });
 </script>
 </body>
