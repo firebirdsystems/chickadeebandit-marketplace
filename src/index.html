@@ -21,7 +21,7 @@
       --radius:       var(--hub-radius, 0.5rem);
       --shadow:       0 1px 3px rgba(0,0,0,.07);
       --shadow-md:    0 4px 12px rgba(0,0,0,.1);
-      --red:    #dc2626; --red-light:   #fee2e2;
+      --red:    var(--hub-tint-danger-fg, #dc2626); --red-light:   var(--hub-tint-danger, #fee2e2);
       --green:  var(--hub-tint-success-fg, #059669); --green-light: #d1fae5;
       --amber:  #d97706; --amber-light: var(--hub-tint-warning, #fef3c7);
     }
@@ -202,6 +202,13 @@
     .field-row .field { flex: 1; }
     .field-hint { font-size: 0.76rem; color: var(--muted); margin-top: 4px; }
 
+    .app-error {
+      position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 200;
+      max-width: min(90vw, 520px); padding: 10px 14px; border-radius: var(--radius);
+      background: var(--hub-tint-danger, var(--red-light)); color: var(--hub-tint-danger-fg, var(--red));
+      font-size: 0.9rem; box-shadow: var(--shadow-md);
+    }
+
     /* ── Modal ── */
     .modal-backdrop {
       position: fixed; inset: 0; background: rgba(0,0,0,.45);
@@ -260,6 +267,9 @@
     .flag-card { padding: 14px 16px; }
     .flag-reason { font-size: 0.86rem; margin: 6px 0 10px; padding: 8px 12px; background: var(--amber-light); border-radius: 8px; }
     .flag-actions { display: flex; gap: 8px; }
+
+    .load-error { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--hub-tint-danger, #fee2e2); color: var(--hub-tint-danger-fg, #b91c1c); font-size: 0.9rem; display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+    .load-error-retry { background: none; border: 1px solid currentColor; border-radius: 8px; padding: 5px 10px; font: inherit; font-weight: 600; color: inherit; cursor: pointer; flex-shrink: 0; }
 
     @media (max-width: 480px) {
       .app { padding: 12px; }
@@ -343,9 +353,28 @@ async function db(sql, params = []) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sql, params }),
   });
-  const json = await res.json();
-  if (json.error) throw new Error(json.error);
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json || typeof json !== "object" || json.error) throw new Error(json?.error || "Couldn’t reach the hub. Try again.");
   return json;
+}
+
+// The page's one place for a failure the member should see: a bar pinned to
+// the bottom, above any open dialog. It fades after a few seconds unless
+// `sticky` (a failed first load, where the page under it is incomplete).
+let errorTimer = null;
+function showError(err, sticky = false) {
+  let el = document.getElementById("app-error");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "app-error";
+    el.className = "app-error";
+    el.setAttribute("role", "alert");
+    document.body.appendChild(el);
+  }
+  el.textContent = err?.message || "Something went wrong. Try again.";
+  el.style.display = "";
+  clearTimeout(errorTimer);
+  if (!sticky) errorTimer = setTimeout(() => { el.style.display = "none"; }, 6000);
 }
 
 // Atomic multi-statement form of /api/db. D1 runs a batch transactionally, so
@@ -359,8 +388,8 @@ async function dbBatch(statements) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ statements }),
   });
-  const body = await res.json();
-  if (!res.ok) throw new Error(body?.error ?? `batch failed (${res.status})`);
+  const body = await res.json().catch(() => null);
+  if (!res.ok || !body || typeof body !== "object" || body.error) throw Object.assign(new Error(body?.error ?? `batch failed (${res.status})`), { status: res.status });
   return body.results ?? [];
 }
 
@@ -389,12 +418,14 @@ async function loadMembers() {
     memberMap = new Map(members.map(m => [m.id, m]));
     return;
   }
-  try {
-    const res  = await fetch(`${CONTEXT}?keys=family.members,family.groups`);
-    const data = await res.json();
-    members = data["family.members"] ?? [];
-    groups  = data["family.groups"]  ?? [];
-  } catch { members = []; groups = []; }
+  // A failed read throws: firstLoad shows the load banner rather than an empty roster.
+  const res  = await fetch(`${CONTEXT}?keys=family.members,family.groups`);
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data || typeof data !== "object" || data.error) throw new Error("Couldn’t reach the hub. Try again.");
+  // The hub answers 200 and names a key it could not resolve in $errors: that read failed too.
+  if (Array.isArray(data.$errors) && (data.$errors.includes("family.members") || data.$errors.includes("family.groups"))) throw new Error("Couldn’t reach the hub. Try again.");
+  members = data["family.members"] ?? [];
+  groups  = data["family.groups"]  ?? [];
   memberMap = new Map(members.map(m => [m.id, m]));
 }
 
@@ -568,13 +599,26 @@ async function createListing(fields, photoFiles) {
   ]).catch(() => {});
 }
 
+// A listing UPDATE the hub narrowed to nothing still answers success: the
+// listing was sold or removed somewhere else (those rows are locked), or is no
+// longer this member's to change. Show what is stored, then say so.
+async function listingNotChanged() {
+  await loadListings();
+  applyModerations();
+  if (currentListing) currentListing = listings.find(l => l.id === currentListing.id) ?? currentListing;
+  closeModal();
+  render();
+  throw new Error("This listing can no longer be changed.");
+}
+
 async function updateListing(listing, fields) {
   const now = new Date().toISOString();
-  await db(
+  const { changed } = await db(
     `UPDATE app_marketplace__listings SET title = ?, description = ?, price_cents = ?, category = ?, pickup_details = ?, updated_at = ?
      WHERE id = ?`,
     [fields.title, fields.description, fields.price_cents, fields.category, fields.pickup_details, now, listing.id]
   );
+  if (changed === 0) await listingNotChanged();
 
   const updated = { ...listing, ...fields, updated_at: now };
   const idx = listings.findIndex(l => l.id === listing.id);
@@ -588,7 +632,8 @@ async function updateListing(listing, fields) {
 
 async function setListingStatus(listing, status) {
   const now = new Date().toISOString();
-  await db(`UPDATE app_marketplace__listings SET status = ?, updated_at = ? WHERE id = ?`, [status, now, listing.id]);
+  const { changed } = await db(`UPDATE app_marketplace__listings SET status = ?, updated_at = ? WHERE id = ?`, [status, now, listing.id]);
+  if (changed === 0) await listingNotChanged();
 
   const updated = { ...listing, status, updated_at: now };
   const idx = listings.findIndex(l => l.id === listing.id);
@@ -612,14 +657,22 @@ async function startOrOpenInquiry(listing) {
     // wrote messages into — every one carrying an inquiry_id with no parent row,
     // invisible to both parties on the next load. Let the error reach the caller
     // instead: never proceed on a write you did not confirm landed.
-    await db(
+    const { changed } = await db(
       `INSERT INTO app_marketplace__inquiries (id, listing_id, buyer_id, buyer_name, seller_id, created_at)
        VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT (listing_id, buyer_id) DO NOTHING`,
       [id, listing.id, ME.id, ME.name, listing.seller_id, now]
     );
-    inquiry = { id, listing_id: listing.id, buyer_id: ME.id, buyer_name: ME.name, seller_id: listing.seller_id, created_at: now };
-    inquiries = [inquiry, ...inquiries];
+    if (changed === 0) {
+      // The thread already exists under another id (started in another tab):
+      // messages must go to that row, not to an id nothing was stored under.
+      await loadInquiries();
+      inquiry = inquiries.find(i => i.listing_id === listing.id && i.buyer_id === ME.id);
+      if (!inquiry) throw new Error("Couldn’t start this conversation. Try again.");
+    } else {
+      inquiry = { id, listing_id: listing.id, buyer_id: ME.id, buyer_name: ME.name, seller_id: listing.seller_id, created_at: now };
+      inquiries = [inquiry, ...inquiries];
+    }
   }
   await openInquiry(inquiry);
 }
@@ -720,11 +773,24 @@ async function resolveFlag(flag, action) {
   // Both statements go in ONE transactional batch: issued separately, a failure
   // on the moderation insert left the report closed and the listing still live,
   // with the report gone from the queue so nobody would look at it again.
+  // A report this member may no longer close changes no row. In the batch,
+  // requireChanges has the hub refuse the whole thing (409) in that case.
+  let closed = true;
   if (action === "remove") {
-    await dbBatch([closeFlag, ...moderationStatements(flag.listing_id, "", now)]);
-    applyModerationLocally(flag.listing_id, "", now);
+    try {
+      await dbBatch([{ ...closeFlag, requireChanges: true }, ...moderationStatements(flag.listing_id, "", now)]);
+      applyModerationLocally(flag.listing_id, "", now);
+    } catch (e) {
+      if (e.status !== 409) throw e;
+      closed = false;
+    }
   } else {
-    await db(closeFlag.sql, closeFlag.params);
+    closed = (await db(closeFlag.sql, closeFlag.params)).changed !== 0;
+  }
+  if (!closed) {
+    await loadFlags();
+    render();
+    throw new Error("This report could not be closed.");
   }
 
   flags = flags.filter(f => f.id !== flag.id);
@@ -850,7 +916,7 @@ window.submitListingForm = async function(existingId) {
     }
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = existingId ? "Save" : "Post listing"; }
-    throw e;
+    showError(e);
   }
 };
 
@@ -949,7 +1015,7 @@ window.submitReport = async function(listingId) {
     await fileFlag(listings.find(l => l.id === listingId), reason);
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = "Submit report"; }
-    throw e;
+    showError(e);
   }
 };
 
@@ -1166,15 +1232,20 @@ async function relistListing(listing) {
   // looks the way the sold one did.
   const photos = listingPhotos.get(listing.id) ?? [];
   const copies = [];
+  let missed = 0;
   for (let i = 0; i < photos.length; i++) {
     const photoId = uuid();
     const thumbId = photos[i].thumb_file_id ?? null;
     const cutoutId = photos[i].cutout_file_id ?? null;
     const cutoutThumbId = photos[i].cutout_thumb_file_id ?? null;
-    await db(
-      `INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, thumb_file_id, cutout_file_id, cutout_thumb_file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [photoId, newId, photos[i].file_id, thumbId, cutoutId, cutoutThumbId, i, now, ME.id]
-    ).catch(() => {});
+    // One photo that will not copy does not undo the relist: it is left off
+    // the new listing and counted, so the seller is told below.
+    try {
+      await db(
+        `INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, thumb_file_id, cutout_file_id, cutout_thumb_file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [photoId, newId, photos[i].file_id, thumbId, cutoutId, cutoutThumbId, i, now, ME.id]
+      );
+    } catch { missed++; continue; }
     copies.push({ id: photoId, file_id: photos[i].file_id, thumb_file_id: thumbId, cutout_file_id: cutoutId, cutout_thumb_file_id: cutoutThumbId, uploaded_by: ME.id, position: i });
   }
   listingPhotos.set(newId, copies);
@@ -1184,6 +1255,12 @@ async function relistListing(listing) {
   view = "listing";
   render();
   logActivity(newId, "relisted", `${ME.name} relisted "${listing.title}"`);
+  if (missed) {
+    const which = missed === photos.length
+      ? (missed === 1 ? "its photo" : "its photos")
+      : `${missed} of its ${photos.length} photos`;
+    showError(new Error(`Relisted, but ${which} couldn’t be copied. Add ${missed === 1 ? "it" : "them"} again from Edit.`));
+  }
 }
 window.confirmRemoveListing = async function(id) {
   const ok = await hubConfirm({ message: "Remove this listing?", description: "It will no longer be visible to anyone. This can't be undone.", confirmLabel: "Remove", destructive: true });
@@ -1305,6 +1382,8 @@ window.submitInquiryMessage = async function() {
     await sendInquiryMessage(currentInquiry, body);
     const newTa = document.getElementById("f-message");
     if (newTa) newTa.value = "";
+  } catch (e) {
+    showError(e);
   } finally {
     const newBtn = document.querySelector(".compose-row .btn-primary");
     if (newBtn) { newBtn.disabled = false; newBtn.textContent = "Send"; }
@@ -1357,7 +1436,7 @@ window.moderateFlag = async function(flagId, action) {
 function renderHeaderActions() {
   const el = document.getElementById("header-actions");
   if (!el) return;
-  el.innerHTML = ME?.isAdmin === true
+  el.innerHTML = ME?.isAdmin === true && !loadFailed
     ? `<button class="btn btn-ghost btn-sm" onclick="openSettingsModal()" title="Marketplace settings">${glyph("gear")} Settings</button>`
     : "";
 }
@@ -1410,7 +1489,7 @@ window.saveSettings = async function() {
     render();
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = "Save"; }
-    throw e;
+    showError(e);
   }
 };
 
@@ -1429,6 +1508,10 @@ async function saveSetting(key, value) {
 // ── Render dispatcher ──────────────────────────────────────────────────────────
 function render() {
   const content = document.getElementById("content");
+  if (loadFailed) {
+    content.innerHTML = `<div class="load-error" data-testid="load-error" role="alert"><span>Couldn’t load the marketplace.</span> <button type="button" class="load-error-retry" data-testid="load-retry">Try again</button></div>`;
+    return;
+  }
   switch (view) {
     case "listing":     content.innerHTML = renderListingDetail(); break;
     case "my-listings": content.innerHTML = renderMyListings(); break;
@@ -1471,27 +1554,37 @@ document.addEventListener("click", (e) => {
   if (!el) return;
   const action = el.dataset.action;
   const id = el.dataset.id;
-  if (action === "moderate-flag") { window.moderateFlag(id, el.dataset.mod); return; }
-  ACTION_DISPATCH[action]?.(id);
+  // A rejected action lands in the error bar rather than vanishing.
+  if (action === "moderate-flag") { window.moderateFlag(id, el.dataset.mod).catch(showError); return; }
+  Promise.resolve(ACTION_DISPATCH[action]?.(id)).catch(showError);
 });
 
 // ── Init ───────────────────────────────────────────────────────────────────────
-(async () => {
+// True from a failed first load until a load succeeds. While it is, the page
+// shows the banner alone: no listings, no tabs, no settings.
+let loadFailed = false;
+async function firstLoad() {
   try {
     // Members/groups + settings first: moderator-queue visibility (loadFlags) depends on
     // knowing the configured moderator group.
     await Promise.all([loadMembers(), loadSettings()]);
     await Promise.all([loadListings(), loadInquiries(), loadFlags(), loadModerations()]);
     applyModerations();
+    loadFailed = false;
   } catch (e) {
     // db() now throws on a rejected read; still render the shell rather than
     // leaving a blank page.
     console.error("marketplace: initial load failed", e);
+    loadFailed = true;
   }
   renderHeaderActions();
   render();
-  handleDeepLink();
-})();
+  if (!loadFailed) handleDeepLink();
+}
+document.addEventListener("click", (e) => {
+  if (e.target.closest('[data-testid="load-retry"]')) firstLoad();
+});
+firstLoad();
 </script>
 </body>
 </html>
