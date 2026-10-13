@@ -946,7 +946,17 @@ window.submitListingForm = async function(existingId) {
 };
 
 async function addPhotosToListing(listingId, files2) {
-  const existing = listingPhotos.get(listingId) ?? await loadPhotosFor(listingId);
+  let existing = listingPhotos.get(listingId);
+  if (!existing) {
+    try {
+      existing = await loadPhotosFor(listingId);
+    } catch (e) {
+      // The edit is already saved. Without the stored photos there is no safe
+      // position for a new one, so none is added and all are counted.
+      console.error("marketplace: photos not read", e);
+      return files2.length;
+    }
+  }
   let pos = existing.length;
   let missed = 0;
   for (const f of files2) {
