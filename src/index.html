@@ -832,6 +832,8 @@ window.closeModal = closeModal;
 
 // ── Listing form (create / edit) ───────────────────────────────────────────────
 let pendingPhotoFiles = [];
+// How many photos the open form may still take: 6, less those the listing has.
+let pendingPhotoRoom = 6;
 
 function categoryOptions(selected) {
   return CATEGORIES.map(c =>
@@ -856,7 +858,9 @@ window.removePendingPhoto = function(idx) {
 
 window.handlePhotoSelect = function(input) {
   const files2 = Array.from(input.files ?? []);
-  pendingPhotoFiles = [...pendingPhotoFiles, ...files2].slice(0, 6);
+  // Added in place: a save already under way holds this same list.
+  pendingPhotoFiles.push(...files2);
+  pendingPhotoFiles.length = Math.min(pendingPhotoFiles.length, pendingPhotoRoom);
   input.value = "";
   const grid = modalEl?.querySelector(".upload-grid-wrap");
   if (grid) grid.innerHTML = renderUploadGrid();
@@ -865,9 +869,10 @@ window.handlePhotoSelect = function(input) {
 function openListingForm(existing = null) {
   pendingPhotoFiles = [];
   const isEdit = !!existing;
+  pendingPhotoRoom = Math.max(0, 6 - (isEdit ? (listingPhotos.get(existing.id)?.length ?? 0) : 0));
   const uploadHtml = FILES_URL ? `
     <div class="field">
-      <label>Photos <span style="font-weight:400;color:var(--muted)">(up to 6)</span></label>
+      <label>Photos <span style="font-weight:400;color:var(--muted)">(${isEdit ? (pendingPhotoRoom ? `up to ${pendingPhotoRoom} more` : "this listing has 6 already") : "up to 6"})</span></label>
       <label class="upload-area">
         ${glyph("camera")} Click to add photos
         <input type="file" accept="image/*" multiple style="display:none" onchange="handlePhotoSelect(this)" />
@@ -925,19 +930,21 @@ window.submitListingForm = async function(existingId) {
 
   const btn = modalEl?.querySelector(".modal-actions .btn-primary");
   if (btn) { btn.disabled = true; btn.textContent = existingId ? "Saving…" : "Posting…"; }
+  // Held here: saving closes the form, and closing it empties the picked list.
+  const photoFiles = pendingPhotoFiles;
 
   try {
     if (existingId) {
       const existing = listings.find(l => l.id === existingId);
       await updateListing(existing, fields);
-      if (pendingPhotoFiles.length) {
+      if (photoFiles.length) {
         // The edit itself is saved by now; photos that did not make it are counted.
-        const picked = pendingPhotoFiles.length;
-        const missed = await addPhotosToListing(existing.id, pendingPhotoFiles);
+        const picked = photoFiles.length;
+        const missed = await addPhotosToListing(existing.id, photoFiles);
         if (missed) showError(userError(`Saved, but ${missed === picked ? (missed === 1 ? "the new photo" : "the new photos") : `${missed} of the ${picked} new photos`} couldn’t be added. Add ${missed === 1 ? "it" : "them"} again from Edit.`));
       }
     } else {
-      await createListing(fields, pendingPhotoFiles);
+      await createListing(fields, photoFiles);
     }
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = existingId ? "Save" : "Post listing"; }
