@@ -354,7 +354,9 @@ async function db(sql, params = []) {
     body: JSON.stringify({ sql, params }),
   });
   const json = await res.json().catch(() => null);
-  if (!res.ok || !json || typeof json !== "object" || json.error) throw new Error(json?.error || "Couldn’t reach the hub. Try again.");
+  if (!res.ok || !json || typeof json !== "object" || json.error) {
+    throw Object.assign(new Error(json?.error || "Couldn’t reach the hub. Try again."), { status: res.status, code: json?.code });
+  }
   return json;
 }
 
@@ -574,12 +576,16 @@ async function createListing(fields, photoFiles) {
   listings = [newListing, ...listings];
 
   // Upload photos after the row exists so we always have a listing to attach them to.
-  const photos = [];
+  let photos = [];
   let missed = 0;
+  let atLimit = false;
   for (let i = 0; i < photoFiles.length; i++) {
+    let fileId = null;
     try {
       // The hub keeps a small copy with the photo, for the grid and the strip.
-      const { id: fileId, thumbnailId = null } = await files.upload(photoFiles[i], { thumbnail: true });
+      const uploaded = await files.upload(photoFiles[i], { thumbnail: true });
+      fileId = uploaded.id;
+      const thumbnailId = uploaded.thumbnailId ?? null;
       const photoId = uuid();
       await db(
         `INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, thumb_file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -590,6 +596,12 @@ async function createListing(fields, photoFiles) {
       // One photo that will not upload or store does not undo the listing: it
       // is left off and counted, so the seller is told below.
       console.error("marketplace: photo not added", e);
+      if (await photoRefusedAtLimit(id, e, fileId)) {
+        // The rest would be refused too: none is sent, and what is stored is shown.
+        atLimit = true;
+        photos = listingPhotos.get(id) ?? photos;
+        break;
+      }
       missed++;
     }
   }
@@ -600,7 +612,8 @@ async function createListing(fields, photoFiles) {
   currentListing = newListing;
   currentPhotoIdx = 0;
   render();
-  if (missed) showError(userError(`Listed, but ${photosMissed(missed, photoFiles.length)} couldn’t be added. Add ${missed === 1 ? "it" : "them"} again from Edit.`));
+  if (atLimit) showError(userError(PHOTO_LIMIT_LINE));
+  else if (missed) showError(userError(`Listed, but ${photosMissed(missed, photoFiles.length)} couldn’t be added. Add ${missed === 1 ? "it" : "them"} again from Edit.`));
 
   Promise.all([
     logActivity(id, "created", `${ME.name} listed "${fields.title}"`),
@@ -612,6 +625,22 @@ async function createListing(fields, photoFiles) {
     }),
   ]).catch(() => {});
 }
+
+// The hub holds each listing to 6 photos (max_per_member) and refuses a 7th
+// with 403. A refused photo row names nothing, so its upload is discarded,
+// best-effort. True when the listing, read again, really holds 6: the refusal
+// was the limit, and sending the photo again cannot work.
+async function photoRefusedAtLimit(listingId, e, fileId) {
+  if (e?.status !== 403 || !fileId) return false;
+  files.delete(fileId).catch(() => {});
+  try {
+    return (await loadPhotosFor(listingId)).length >= 6;
+  } catch (readError) {
+    console.error("marketplace: photos not read", readError);
+    return false;
+  }
+}
+const PHOTO_LIMIT_LINE = "A listing can have up to 6 photos.";
 
 // "its photo" / "its photos" / "2 of its 5 photos", for the line that says a
 // listing saved without some of the photos picked for it.
@@ -954,8 +983,10 @@ window.submitListingForm = async function(existingId) {
       if (photoFiles.length) {
         // The edit itself is saved by now; photos that did not make it are counted.
         const picked = photoFiles.length;
-        const missed = await addPhotosToListing(existing.id, photoFiles);
-        if (missed) showError(userError(`Saved, but ${missed === picked ? (missed === 1 ? "the new photo" : "the new photos") : `${missed} of the ${picked} new photos`} couldn’t be added. Add ${missed === 1 ? "it" : "them"} again from Edit.`));
+        const { missed, refused, atLimit } = await addPhotosToListing(existing.id, photoFiles);
+        if (atLimit) showError(userError(PHOTO_LIMIT_LINE));
+        else if (refused) showError(userError("Saved, but you don’t have permission to add photos to this listing."));
+        else if (missed) showError(userError(`Saved, but ${missed === picked ? (missed === 1 ? "the new photo" : "the new photos") : `${missed} of the ${picked} new photos`} couldn’t be added. Add ${missed === 1 ? "it" : "them"} again from Edit.`));
       }
     } else {
       await createListing(fields, photoFiles);
@@ -978,13 +1009,18 @@ async function addPhotosToListing(listingId, files2) {
       // position for a new one, so none is added and all are counted.
       console.error("marketplace: photos not read", e);
       settle(-files2.length);
-      return files2.length;
+      return { missed: files2.length, atLimit: false };
     }
   }
   let missed = 0;
-  for (const f of files2) {
+  let refused = 0;
+  let atLimit = false;
+  for (const [i, f] of files2.entries()) {
+    let fileId = null;
     try {
-      const { id: fileId, thumbnailId = null } = await files.upload(f, { thumbnail: true });
+      const uploaded = await files.upload(f, { thumbnail: true });
+      fileId = uploaded.id;
+      const thumbnailId = uploaded.thumbnailId ?? null;
       const photoId = uuid();
       const now = new Date().toISOString();
       // Taken here, before the row is sent: past every stored photo and past
@@ -997,14 +1033,26 @@ async function addPhotosToListing(listingId, files2) {
     } catch (e) {
       // Left off and counted: the caller tells the seller how many.
       console.error("marketplace: photo not added", e);
-      missed++;
+      if (await photoRefusedAtLimit(listingId, e, fileId)) {
+        // The rest would be refused too: none is sent, and what is stored is shown.
+        atLimit = true;
+        existing = listingPhotos.get(listingId) ?? existing;
+        settle(-(files2.length - i - 1));
+        break;
+      }
+      if (e?.status === 403) {
+        // Refused for another reason (sold or locked meanwhile): sending it
+        // again will not help. Keep the rows the check above just read.
+        refused++;
+        existing = listingPhotos.get(listingId) ?? existing;
+      } else missed++;
     } finally {
       settle(-1);
     }
   }
   listingPhotos.set(listingId, existing);
   if (currentListing?.id === listingId) { currentPhotoIdx = 0; render(); }
-  return missed;
+  return { missed, refused, atLimit };
 }
 
 // ── Photo background ───────────────────────────────────────────────────────────
@@ -1028,9 +1076,13 @@ window.removeBackground = async function(photoId) {
   if (!photo?.file_id || cutoutBusy) return;
   const fileId = photo.file_id;
   cutoutBusy = photoId; cutoutError = ""; render();
+  // Only the cutout's own refusals have a line of their own; a failed row write
+  // after it is the plain "try again".
+  let cutting = true;
   try {
     // The hub also keeps a small copy of the cutout, for the grid and the strip.
     const cut = await files.cutout(fileId, { thumbnail: true });
+    cutting = false;
     const smallId = cut.thumbnailId ?? null;
     // Kept only if the row still names the photo it was made from.
     const { changed } = await db(`UPDATE app_marketplace__listing_photos SET cutout_file_id = ?, cutout_thumb_file_id = ? WHERE id = ? AND file_id = ?`,
@@ -1039,7 +1091,7 @@ window.removeBackground = async function(photoId) {
     else Object.assign(photo, { cutout_file_id: cut.id, cutout_thumb_file_id: smallId });
   } catch (e) {
     console.error("marketplace: cutout failed", e);
-    cutoutError = e.status ? cutoutRefusal(e.status, e.detail) : "Couldn’t remove the background — try again.";
+    cutoutError = cutting && e.status ? cutoutRefusal(e.status, e.detail) : "Couldn’t remove the background — try again.";
   }
   cutoutBusy = ""; render();
 };

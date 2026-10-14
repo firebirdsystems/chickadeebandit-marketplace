@@ -73,7 +73,8 @@
       "fk_column": "listing_id",
       "parent_table": "listings",
       "writer_column": "uploaded_by",
-      "insert_owner_only": true
+      "insert_owner_only": true,
+      "max_per_member": { "member_column": "uploaded_by", "scope_columns": ["listing_id"], "limit": 6 }
     },
     "moderations": {
       "kind": "inherit_visibility",
@@ -135,7 +136,7 @@
         {
           "table": "listing_photos",
           "foreign_key": "listing_id",
-          "file_id_column": "file_id"
+          "file_id_column": ["file_id", "thumb_file_id", "cutout_file_id", "cutout_thumb_file_id"]
         },
         {
           "table": "moderations",

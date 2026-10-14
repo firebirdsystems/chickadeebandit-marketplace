@@ -600,6 +600,73 @@
       ]
     },
     {
+      "name": "a listing holds at most 6 photos: the seller's 7th photo is refused",
+      "members": { "seller": "adult" },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_marketplace__listings (id, title, status, seller_id, seller_name, created_at, updated_at) VALUES ('l1', 'Couch', 'active', ?, 'Seller', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+          "params": ["{{seller}}"]
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": ["ph1", "l1", "file-1", 0, "2026-01-01T00:00:00Z", "{{seller}}"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": ["ph2", "l1", "file-2", 1, "2026-01-01T00:00:00Z", "{{seller}}"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": ["ph3", "l1", "file-3", 2, "2026-01-01T00:00:00Z", "{{seller}}"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": ["ph4", "l1", "file-4", 3, "2026-01-01T00:00:00Z", "{{seller}}"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": ["ph5", "l1", "file-5", 4, "2026-01-01T00:00:00Z", "{{seller}}"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": ["ph6", "l1", "file-6", 5, "2026-01-01T00:00:00Z", "{{seller}}"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": ["ph7", "l1", "file-7", 6, "2026-01-01T00:00:00Z", "{{seller}}"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "seller",
+          "sql": "SELECT id FROM app_marketplace__listing_photos WHERE listing_id = ?",
+          "params": ["l1"],
+          "expect": { "status": 200, "rowCount": 6 }
+        }
+      ]
+    },
+    {
       "name": "the seller who attached a photo keeps a cutout of it and can put the background back, and so can a moderator; another adult changes nothing",
       "members": { "seller": "adult", "neighbour": "adult", "mod": "adult" },
       "steps": [
