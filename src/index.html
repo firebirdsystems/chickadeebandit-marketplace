@@ -837,6 +837,9 @@ let pendingPhotoRoom = 6;
 // listingId -> photos from an earlier Edit still on their way up. They are not
 // in listingPhotos yet, so the room an Edit reopened meanwhile offers counts them.
 const photosInFlight = new Map();
+// listingId -> the first position no upload from this page has taken yet, so
+// two saves adding photos at once never hand out the same one.
+const photoNextPos = new Map();
 
 function categoryOptions(selected) {
   return CATEGORIES.map(c =>
@@ -939,7 +942,12 @@ window.submitListingForm = async function(existingId) {
   try {
     if (existingId) {
       const existing = listings.find(l => l.id === existingId);
-      await updateListing(existing, fields);
+      // Counted from Save, not from the first upload: an Edit cancelled and
+      // reopened while the listing itself is still saving has them taken off its room.
+      const held = photoFiles.length;
+      const hold = n => photosInFlight.set(existingId, (photosInFlight.get(existingId) ?? 0) + n);
+      hold(held);
+      try { await updateListing(existing, fields); } finally { hold(-held); }
       if (photoFiles.length) {
         // The edit itself is saved by now; photos that did not make it are counted.
         const picked = photoFiles.length;
@@ -970,17 +978,19 @@ async function addPhotosToListing(listingId, files2) {
       return files2.length;
     }
   }
-  let pos = existing.length;
   let missed = 0;
   for (const f of files2) {
     try {
       const { id: fileId, thumbnailId = null } = await files.upload(f, { thumbnail: true });
       const photoId = uuid();
       const now = new Date().toISOString();
+      // Taken here, before the row is sent: past every stored photo and past
+      // any position another save under way has already taken.
+      const pos = Math.max(photoNextPos.get(listingId) ?? 0, ...existing.map(p => p.position + 1));
+      photoNextPos.set(listingId, pos + 1);
       await db(`INSERT INTO app_marketplace__listing_photos (id, listing_id, file_id, thumb_file_id, position, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [photoId, listingId, fileId, thumbnailId, pos, now, ME.id]);
       existing.push({ id: photoId, file_id: fileId, thumb_file_id: thumbnailId, cutout_file_id: null, uploaded_by: ME.id, position: pos });
-      pos++;
     } catch (e) {
       // Left off and counted: the caller tells the seller how many.
       console.error("marketplace: photo not added", e);
