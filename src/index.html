@@ -556,6 +556,7 @@ async function publishEvent(type, subjectId, payload = {}) {
 
 // ── Listings: create / edit / status ───────────────────────────────────────────
 async function createListing(fields, photoFiles) {
+  const form = modalEl; // close only the form that submitted, not one opened since
   const id = uuid();
   const now = new Date().toISOString();
 
@@ -594,7 +595,7 @@ async function createListing(fields, photoFiles) {
   }
   listingPhotos.set(id, photos);
 
-  closeModal();
+  if (modalEl === form) closeModal();
   view = "listing";
   currentListing = newListing;
   currentPhotoIdx = 0;
@@ -622,30 +623,32 @@ function photosMissed(missed, total) {
 // A listing UPDATE the hub narrowed to nothing still answers success: the
 // listing was sold or removed somewhere else (those rows are locked), or is no
 // longer this member's to change. Show what is stored, then say so.
-async function listingNotChanged() {
+// `form` is the dialog that submitted (none for a status change): only that one closes.
+async function listingNotChanged(form = null) {
   await loadListings();
   applyModerations();
   if (currentListing) currentListing = listings.find(l => l.id === currentListing.id) ?? currentListing;
-  closeModal();
+  if (form && modalEl === form) closeModal();
   render();
   throw userError("This listing can no longer be changed.");
 }
 
 async function updateListing(listing, fields) {
+  const form = modalEl; // close only the form that submitted, not one reopened since
   const now = new Date().toISOString();
   const { changed } = await db(
     `UPDATE app_marketplace__listings SET title = ?, description = ?, price_cents = ?, category = ?, pickup_details = ?, updated_at = ?
      WHERE id = ?`,
     [fields.title, fields.description, fields.price_cents, fields.category, fields.pickup_details, now, listing.id]
   );
-  if (changed === 0) await listingNotChanged();
+  if (changed === 0) await listingNotChanged(form);
 
   const updated = { ...listing, ...fields, updated_at: now };
   const idx = listings.findIndex(l => l.id === listing.id);
   if (idx !== -1) listings[idx] = updated;
   if (currentListing?.id === listing.id) currentListing = updated;
 
-  closeModal();
+  if (modalEl === form) closeModal();
   render();
   logActivity(listing.id, "edited", `${ME.name} edited "${fields.title}"`);
 }
