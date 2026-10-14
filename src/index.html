@@ -834,6 +834,9 @@ window.closeModal = closeModal;
 let pendingPhotoFiles = [];
 // How many photos the open form may still take: 6, less those the listing has.
 let pendingPhotoRoom = 6;
+// listingId -> photos from an earlier Edit still on their way up. They are not
+// in listingPhotos yet, so the room an Edit reopened meanwhile offers counts them.
+const photosInFlight = new Map();
 
 function categoryOptions(selected) {
   return CATEGORIES.map(c =>
@@ -869,7 +872,7 @@ window.handlePhotoSelect = function(input) {
 function openListingForm(existing = null) {
   pendingPhotoFiles = [];
   const isEdit = !!existing;
-  pendingPhotoRoom = Math.max(0, 6 - (isEdit ? (listingPhotos.get(existing.id)?.length ?? 0) : 0));
+  pendingPhotoRoom = Math.max(0, 6 - (isEdit ? (listingPhotos.get(existing.id)?.length ?? 0) + (photosInFlight.get(existing.id) ?? 0) : 0));
   const uploadHtml = FILES_URL ? `
     <div class="field">
       <label>Photos <span style="font-weight:400;color:var(--muted)">(${isEdit ? (pendingPhotoRoom ? `up to ${pendingPhotoRoom} more` : "this listing has 6 already") : "up to 6"})</span></label>
@@ -953,6 +956,8 @@ window.submitListingForm = async function(existingId) {
 };
 
 async function addPhotosToListing(listingId, files2) {
+  const settle = n => photosInFlight.set(listingId, (photosInFlight.get(listingId) ?? 0) + n);
+  settle(files2.length);
   let existing = listingPhotos.get(listingId);
   if (!existing) {
     try {
@@ -961,6 +966,7 @@ async function addPhotosToListing(listingId, files2) {
       // The edit is already saved. Without the stored photos there is no safe
       // position for a new one, so none is added and all are counted.
       console.error("marketplace: photos not read", e);
+      settle(-files2.length);
       return files2.length;
     }
   }
@@ -979,6 +985,8 @@ async function addPhotosToListing(listingId, files2) {
       // Left off and counted: the caller tells the seller how many.
       console.error("marketplace: photo not added", e);
       missed++;
+    } finally {
+      settle(-1);
     }
   }
   listingPhotos.set(listingId, existing);
