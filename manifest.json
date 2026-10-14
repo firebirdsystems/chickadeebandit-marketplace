@@ -66,32 +66,6 @@
           "sold",
           "removed"
         ]
-      },
-      "retain_days": {
-        "default": 365,
-        "timestamp_column": "updated_at",
-        "override_key": "listing_history",
-        "exempt_when": {
-          "column": "status",
-          "values": [
-            "active"
-          ]
-        },
-        "dependent_tables": [
-          {
-            "table": "listing_photos",
-            "foreign_key": "listing_id",
-            "file_id_column": "file_id"
-          },
-          {
-            "table": "moderations",
-            "foreign_key": "listing_id"
-          },
-          {
-            "table": "flags",
-            "foreign_key": "listing_id"
-          }
-        ]
       }
     },
     "listing_photos": {
@@ -114,18 +88,7 @@
         "buyer_id",
         "seller_id"
       ],
-      "self_column": "buyer_id",
-      "retain_days": {
-        "default": 365,
-        "timestamp_column": "created_at",
-        "override_key": "inquiry_history",
-        "dependent_tables": [
-          {
-            "table": "inquiry_messages",
-            "foreign_key": "inquiry_id"
-          }
-        ]
-      }
+      "self_column": "buyer_id"
     },
     "inquiry_messages": {
       "kind": "party_scoped",
@@ -154,30 +117,56 @@
       "kind": "owner_only",
       "member_column": "actor_id",
       "adults_bypass": false,
-      "member_can_update": false,
-      "retain_days": {
-        "default": 365,
-        "timestamp_column": "created_at",
-        "override_key": "activity_history"
-      }
+      "member_can_update": false
+    }
+  },
+  "retention": {
+    "listings": {
+      "default": 365,
+      "timestamp_column": "updated_at",
+      "override_key": "listing_history",
+      "exempt_when": {
+        "column": "status",
+        "values": [
+          "active"
+        ]
+      },
+      "dependent_tables": [
+        {
+          "table": "listing_photos",
+          "foreign_key": "listing_id",
+          "file_id_column": "file_id"
+        },
+        {
+          "table": "moderations",
+          "foreign_key": "listing_id"
+        },
+        {
+          "table": "flags",
+          "foreign_key": "listing_id"
+        }
+      ]
+    },
+    "inquiries": {
+      "default": 365,
+      "timestamp_column": "created_at",
+      "override_key": "inquiry_history",
+      "dependent_tables": [
+        {
+          "table": "inquiry_messages",
+          "foreign_key": "inquiry_id"
+        }
+      ]
+    },
+    "activity": {
+      "default": 365,
+      "timestamp_column": "created_at",
+      "override_key": "activity_history"
     }
   },
   "required_capabilities": ["image_cutout"],
-  "delete_file_columns": {
-    "listing_photos": [
-      "file_id",
-      "thumb_file_id",
-      "cutout_file_id",
-      "cutout_thumb_file_id"
-    ]
-  },
-  "update_file_columns": {
-    "listing_photos": [
-      "file_id",
-      "thumb_file_id",
-      "cutout_file_id",
-      "cutout_thumb_file_id"
-    ]
+  "file_columns": {
+    "listing_photos": { "columns": ["file_id", "thumb_file_id", "cutout_file_id", "cutout_thumb_file_id"] }
   },
   "member_references": {
     "listings": {
@@ -356,7 +345,6 @@
     "requires_approval": false
   },
   "resource_limits": {
-    "max_db_bytes": 52428800,
     "max_file_bytes": 10485760,
     "max_files_bytes": 524288000,
     "max_store_reads_per_day": 2000,
